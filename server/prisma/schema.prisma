@@ -1,0 +1,53 @@
+// Prisma schema for RealLead Trainer
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 🗣️ Store conversation transcripts
+model Conversation {
+  id          String   @id @default(cuid())
+  userId      String?  // Optional: for future user accounts
+  transcript  String   @db.Text
+  duration    Int?     // Call duration in seconds
+  scenario    String?  // e.g., "cold-call", "follow-up", "demo"
+  difficulty  String?  // e.g., "easy", "medium", "hard"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// 📄 Store uploaded scripts for training
+model Script {
+  id          String   @id @default(cuid())
+  userId      String?  // Optional: for future user accounts
+  title       String?
+  description String?  @db.Text
+  fileUrl     String
+  fileName    String
+  fileSize    Int?
+  uploadedAt  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([uploadedAt])
+}
+
+// 👤 Future: User model for authentication
+// model User {
+//   id            String   @id @default(cuid())
+//   email         String   @unique
+//   name          String?
+//   createdAt     DateTime @default(now())
+//   updatedAt     DateTime @updatedAt
+//   conversations Conversation[]
+//   scripts       Script[]
+// }
+
