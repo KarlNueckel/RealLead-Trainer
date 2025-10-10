@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { CallConfig } from "./ConfigurationPage";
+import KaraokeCall, { ScriptChunk } from "./KaraokeCall";
 
 export interface TranscriptEntry {
   speaker: "user" | "ai";
@@ -17,29 +18,96 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [status, setStatus] = useState<string>("Initializing...");
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initProgress, setInitProgress] = useState(0);
+  
+  // Script state
+  const [scriptChunks, setScriptChunks] = useState<ScriptChunk[]>([]);
+  const userSilenceCallbackRef = useRef<(() => void) | null>(null);
+  const aiFinishCallbackRef = useRef<(() => void) | null>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioQueueRef = useRef<AudioBuffer[]>([]);
   const isPlayingRef = useRef(false);
+  const apiFinishedSendingRef = useRef(false); // Track when API stops sending chunks
+  const playbackSafetyTimeoutRef = useRef<number | null>(null); // Safety fallback after API done
+
+  // Parse script into KaraokeCall chunks on mount
+  useEffect(() => {
+    if (config.script?.content) {
+      const chunks: ScriptChunk[] = [];
+      let currentLabel = "";
+
+      // Split by double newlines to get sections
+      const sections = config.script.content.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
+      
+      for (const section of sections) {
+        const lines = section.split('\n').map(l => l.trim()).filter(Boolean);
+        
+        // Check if first line is a label/header
+        const firstLine = lines[0];
+        if (firstLine.match(/^(Introduction|Opening|Purpose|Value|Question|Response|Closing|Next Steps|Qualifying Questions|Reconnection|Recap|Call to Action):/i)) {
+          currentLabel = firstLine.replace(/:.*/, ''); // Extract label
+          
+          // Join remaining lines as the text
+          const text = lines.slice(1).join('\n').replace(/^[""]|[""]$/g, '').trim();
+          if (text) {
+            chunks.push({
+              speaker: "user", // User says these lines
+              text: text,
+              label: currentLabel
+            });
+            // Add a placeholder AI response after each user line
+            chunks.push({
+              speaker: "ai",
+              text: "" // AI will respond naturally via Realtime API
+            });
+          }
+        } else {
+          // Regular text - alternate between user and ai
+          const text = section.replace(/^[""]|[""]$/g, '').trim();
+          if (text) {
+            chunks.push({
+              speaker: chunks.length % 2 === 0 ? "user" : "ai",
+              text: text
+            });
+          }
+        }
+      }
+
+      setScriptChunks(chunks);
+      console.log("📚 Parsed script chunks:", chunks.map((c, i) => `${i}: ${c.speaker} - ${c.text.substring(0, 30)}...`));
+    }
+  }, [config.script]);
 
   // System prompt based on configuration
   const getSystemPrompt = () => {
     const scenarioPrompts = {
-      "cold-call": "You are a skeptical business owner receiving a cold call. Be professional but cautious. Ask questions about the product/service being offered.",
-      "follow-up": "You are a potential client who showed initial interest. You're open to discussion but need more details to make a decision.",
-      "demo": "You are a curious prospect attending a product demo. Ask clarifying questions and express both interest and concerns.",
+      "fsbo": "You are a homeowner selling your house without a real estate agent (FSBO). You're fielding calls from agents trying to convince you to list with them.",
+      "expired": "You are a frustrated homeowner whose listing just expired without selling. You're disappointed but may be open to relisting with the right agent.",
+      "buyer-consult": "You are a prospective home buyer who reached out to learn about working with an agent. You have questions about the buying process.",
+      "seller-consult": "You are a homeowner considering selling your property. You're interviewing agents to see who would be the best fit.",
+      "cold-call": "You are a homeowner receiving an unexpected call from a real estate agent. You're busy and initially resistant.",
+      "circle-prospect": "You are a homeowner in a neighborhood where a property recently sold. An agent is calling about it.",
+    };
+
+    const moodModifiers = {
+      "friendly": "Be warm, open, and receptive to the conversation. Show genuine interest.",
+      "neutral": "Be cautiously interested but reserved. You need to be convinced before committing.",
+      "skeptical": "Be resistant, doubtful, and require strong convincing. Question their motives.",
     };
 
     const difficultyModifiers = {
-      "easy": "Be receptive and friendly.",
-      "medium": "Be moderately skeptical but open-minded.",
-      "hard": "Be very skeptical and challenging. Push back on claims and ask difficult questions.",
+      "easy": "Keep objections simple and easy to overcome. Be reasonable.",
+      "medium": "Present moderate challenges and objections. Make them work for it.",
+      "hard": "Be very challenging with complex objections. Push back hard and test their skills.",
     };
 
-    return `${scenarioPrompts[config.scenario as keyof typeof scenarioPrompts]} ${difficultyModifiers[config.difficulty as keyof typeof difficultyModifiers]} Keep responses conversational and realistic. Respond naturally as if in a real phone conversation.`;
+    return `${scenarioPrompts[config.scenario as keyof typeof scenarioPrompts]} ${moodModifiers[config.mood as keyof typeof moodModifiers]} ${difficultyModifiers[config.difficulty as keyof typeof difficultyModifiers]} Keep responses conversational and realistic. Respond naturally as if in a real phone conversation. Stay in character throughout the call.`;
   };
 
   // Initialize WebSocket connection
@@ -48,14 +116,17 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
 
     const initializeCall = async () => {
       try {
+        setInitProgress(20);
         setStatus("Requesting session token...");
         
-        // Get session token from backend
-        const response = await fetch("/api/realtime-session");
+        // Get session token from backend with selected voice
+        const voiceParam = config.voice || 'verse';
+        const response = await fetch(`/api/realtime-session?voice=${voiceParam}`);
         if (!response.ok) {
           throw new Error("Failed to get session token");
         }
         
+        setInitProgress(40);
         const sessionData = await response.json();
         const ephemeralKey = sessionData.client_secret?.value;
         
@@ -63,6 +134,7 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
           throw new Error("No ephemeral key received");
         }
 
+        setInitProgress(50);
         setStatus("Connecting to OpenAI...");
 
         // Create WebSocket connection
@@ -77,29 +149,33 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
           if (!mounted) return;
           console.log("WebSocket connected");
           setIsConnected(true);
-          setStatus("Connected - Ready to talk");
+          setInitProgress(70);
+          setStatus("Configuring session...");
 
-          // Configure session with system prompt
+          // Configure session for text-only (we'll use ElevenLabs for TTS)
+          console.log(`🎙️ Configuring session for text-only mode (ElevenLabs TTS)`);
+          
           ws.send(JSON.stringify({
             type: "session.update",
             session: {
-              modalities: ["text", "audio"],
+              modalities: ["text"], // Text only - no audio output from OpenAI
               instructions: getSystemPrompt(),
-              voice: "verse",
               input_audio_format: "pcm16",
-              output_audio_format: "pcm16",
               input_audio_transcription: {
                 model: "whisper-1"
               },
               turn_detection: {
                 type: "server_vad",
                 threshold: 0.5,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 700,
+                prefix_padding_ms: 1000, // Increased from 300ms to capture first word
+                silence_duration_ms: 1200, // Increased from 700ms for more natural pauses
               },
             },
           }));
 
+          setInitProgress(85);
+          setStatus("Starting microphone...");
+          
           // Start microphone
           startMicrophone();
         });
@@ -169,37 +245,50 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
         console.log("💬 Item created:", event.item);
         break;
 
-      case "response.audio_transcript.delta":
-        // Real-time transcript deltas (partial)
-        console.log("📝 AI transcript delta:", event.delta);
+      case "response.output_item.added":
+        console.log("📝 Output item added:", event.item);
         break;
 
-      case "response.audio_transcript.done":
-        // Complete transcript from AI
-        console.log("✅ AI transcript complete:", event.transcript);
-        const aiMessage = event.transcript;
-        if (aiMessage) {
-          setTranscript((prev) => [
-            ...prev,
-            {
-              speaker: "ai",
-              message: aiMessage,
-              timestamp: timeElapsed,
-            },
-          ]);
+      case "response.output_item.done":
+        // Complete AI response in text-only mode
+        console.log("✅ Output item done:", event.item);
+        if (event.item?.type === "message" && event.item?.role === "assistant") {
+          const content = event.item.content;
+          if (Array.isArray(content)) {
+            // Find text content
+            const textContent = content.find((c: any) => c.type === "text");
+            if (textContent?.text) {
+              const aiMessage = textContent.text;
+              console.log("🎤 AI response text:", aiMessage);
+              
+              setTranscript((prev) => [
+                ...prev,
+                {
+                  speaker: "ai",
+                  message: aiMessage,
+                  timestamp: timeElapsed,
+                },
+              ]);
+              
+              // Generate audio with ElevenLabs
+              await generateElevenLabsAudio(aiMessage);
+            }
+          }
         }
+        break;
+
+      case "response.text.delta":
+        // Real-time text deltas (partial) - for streaming
+        console.log("📝 AI text delta:", event.delta);
+        break;
+
+      case "response.text.done":
+        // Alternative event for text completion
+        console.log("✅ AI text complete:", event.text);
         break;
 
       case "response.audio.delta":
-        // Audio data from AI
-        const audioDelta = event.delta;
-        if (audioDelta) {
-          await playAudioDelta(audioDelta);
-        }
-        break;
-
-      case "response.audio.done":
-        console.log("✅ Audio response complete");
+        // Not used in text-only mode
         break;
 
       case "conversation.item.input_audio_transcription.completed":
@@ -210,9 +299,9 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
           setTranscript((prev) => [
             ...prev,
             {
-              speaker: "user",
+      speaker: "user",
               message: userMessage,
-              timestamp: timeElapsed,
+      timestamp: timeElapsed,
             },
           ]);
         }
@@ -225,7 +314,15 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
 
       case "input_audio_buffer.speech_stopped":
         console.log("🛑 User stopped speaking");
+        console.log("🔍 Silence callback ref exists?", !!userSilenceCallbackRef.current);
         setIsRecording(false);
+        // Trigger user silence callback for KaraokeCall
+        if (userSilenceCallbackRef.current) {
+          console.log("🎯 Triggering user silence callback");
+          userSilenceCallbackRef.current();
+        } else {
+          console.log("❌ No silence callback registered!");
+        }
         break;
 
       case "input_audio_buffer.committed":
@@ -236,8 +333,13 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
         console.log("🤖 AI response created");
         break;
 
+      case "response.audio.done":
+        // Not used in text-only mode (ElevenLabs handles audio)
+        console.log("ℹ️ response.audio.done (ignored in text-only mode)");
+        break;
+
       case "response.done":
-        console.log("✅ AI response done");
+        console.log("✅ Full response done");
         break;
 
       case "error":
@@ -299,13 +401,87 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       processor.connect(audioContext.destination);
 
       console.log("Microphone started");
+      setInitProgress(100);
+      setStatus("Ready - Start speaking!");
+      
+      // Hide loading screen after a brief moment
+      setTimeout(() => {
+        setIsInitializing(false);
+      }, 300);
     } catch (error) {
       console.error("Microphone error:", error);
       setStatus("Microphone access denied");
+      setIsInitializing(false);
     }
   };
 
   // Play audio delta from AI
+  // Generate and play ElevenLabs TTS audio
+  const generateElevenLabsAudio = async (text: string) => {
+    try {
+      console.log(`🎙️ Generating ElevenLabs audio for: "${text.substring(0, 50)}..."`);
+      setIsAISpeaking(true);
+      
+      const voiceId = config.voice || 'EXAVITQu4vr4xnSDxMaL';
+      
+      const response = await fetch('/api/tts/speak', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text,
+          voice_id: voiceId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('TTS generation failed');
+      }
+
+      // Get audio blob
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      console.log('✅ ElevenLabs audio ready, playing...');
+
+      // Play audio
+      const audio = new Audio(audioUrl);
+      
+      audio.onended = () => {
+        console.log('✅ ElevenLabs audio playback complete');
+        setIsAISpeaking(false);
+        URL.revokeObjectURL(audioUrl);
+        
+        // Trigger callback for KaraokeCall
+        if (aiFinishCallbackRef.current) {
+          const callback = aiFinishCallbackRef.current;
+          aiFinishCallbackRef.current = null;
+          callback();
+        }
+      };
+
+      audio.onerror = (error) => {
+        console.error('❌ Audio playback error:', error);
+        setIsAISpeaking(false);
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      await audio.play();
+      
+    } catch (error) {
+      console.error('❌ ElevenLabs TTS error:', error);
+      setIsAISpeaking(false);
+      
+      // Still trigger callback to continue flow
+      if (aiFinishCallbackRef.current) {
+        const callback = aiFinishCallbackRef.current;
+        aiFinishCallbackRef.current = null;
+        callback();
+      }
+    }
+  };
+
   const playAudioDelta = async (base64Audio: string) => {
     if (!audioContextRef.current) {
       audioContextRef.current = new AudioContext({ sampleRate: 24000 });
@@ -348,10 +524,33 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const playNextAudio = () => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
+      console.log("🎵 Audio queue empty");
+      
+      // ONLY trigger callback if API has finished sending AND queue is empty
+      if (apiFinishedSendingRef.current) {
+        console.log("✅ API finished sending + queue empty = AI completely done!");
+        
+        if (aiFinishCallbackRef.current) {
+          console.log("🎯 Triggering AI finish callback (onend) - KaraokeCall will advance");
+          const callback = aiFinishCallbackRef.current;
+          aiFinishCallbackRef.current = null;
+          apiFinishedSendingRef.current = false; // Reset flag
+          if (playbackSafetyTimeoutRef.current) {
+            clearTimeout(playbackSafetyTimeoutRef.current);
+            playbackSafetyTimeoutRef.current = null;
+          }
+          callback();
+        } else {
+          console.log("⚠️ No AI finish callback registered");
+        }
+      } else {
+        console.log("⏳ Queue empty but API still sending, waiting for more chunks...");
+      }
       return;
     }
 
     isPlayingRef.current = true;
+    console.log(`▶️ Playing audio buffer (${audioQueueRef.current.length} remaining in queue)`);
     const audioBuffer = audioQueueRef.current.shift()!;
 
     const source = audioContextRef.current!.createBufferSource();
@@ -359,7 +558,8 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
     source.connect(audioContextRef.current!.destination);
     
     source.onended = () => {
-      playNextAudio();
+      console.log("🔊 Audio buffer finished, checking queue...");
+      playNextAudio(); // Recursively play next or trigger callback
     };
 
     source.start();
@@ -389,14 +589,90 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // Loading overlay
+  const LoadingOverlay = () => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-indigo-600/95 via-purple-600/95 to-violet-600/95 backdrop-blur-sm">
+      <div className="text-center">
+        <div className="mb-8">
+          <div className="inline-block p-4 bg-white/10 rounded-full backdrop-blur-md">
+            <svg className="w-16 h-16 text-white animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+          </div>
+        </div>
+        
+        <h2 className="text-3xl font-bold text-white mb-3">
+          Setting Up Your Call
+        </h2>
+        <p className="text-xl text-indigo-100 mb-8">
+          {status}
+        </p>
+        
+        {/* Progress bar */}
+        <div className="w-80 mx-auto">
+          <div className="h-3 bg-white/20 rounded-full overflow-hidden backdrop-blur-sm">
+            <div 
+              className="h-full bg-gradient-to-r from-white to-indigo-200 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${initProgress}%` }}
+            />
+          </div>
+          <div className="mt-3 text-white/80 text-sm">
+            {initProgress}%
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // If script is available, use KaraokeCall interface
+  if (config.script && scriptChunks.length > 0) {
+    return (
+      <>
+        {isInitializing && <LoadingOverlay />}
+        <KaraokeCall
+        title="🎙️ Voice Call in Progress"
+        scriptTitle={config.script.name}
+        chunks={scriptChunks}
+        onEndCall={handleEndCall}
+        onStartUserListening={() => {
+          // Already listening via WebSocket
+          console.log("📝 Ready for user speech");
+        }}
+        onStopUserListening={() => {
+          // Keep listening via WebSocket
+          console.log("📝 User finished speaking");
+        }}
+        onUserSilence={(cb) => {
+          console.log("🤫 onUserSilence called - storing silence callback", typeof cb);
+          // Store the callback to be triggered when speech stops
+          userSilenceCallbackRef.current = cb;
+          console.log("✅ Silence callback stored, ref is now:", !!userSilenceCallbackRef.current);
+        }}
+        speakAI={(_text, onend) => {
+          console.log("🎵 speakAI called - storing onend callback");
+          // Store callback to be triggered when AI audio finishes
+          aiFinishCallbackRef.current = onend;
+          // The audio will play automatically via WebSocket response
+          // onend will be called in playNextAudio when queue is empty
+        }}
+        showTimerText={formatTime(timeElapsed)}
+        isUserSpeaking={isRecording}
+      />
+      </>
+    );
+  }
+
+  // Fallback: regular transcript view
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <>
+      {isInitializing && <LoadingOverlay />}
+      <div className="flex flex-col h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">🎙️ Voice Call in Progress</h2>
             <p className="text-sm text-gray-600">
-              {config.scenario} • {config.difficulty}
+              {config.scenario.toUpperCase()} • {config.mood} mood • {config.difficulty} difficulty
             </p>
           </div>
           <div className="text-right">
@@ -468,11 +744,12 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       </div>
 
       {/* Instructions */}
-      <div className="bg-white border-t border-gray-200 p-4">
-        <div className="text-center text-sm text-gray-600">
-          <p>💡 <strong>Tip:</strong> Speak naturally - the AI will detect when you start and stop talking.</p>
+      <div className="bg-white border-t border-gray-200 p-3">
+        <div className="text-center text-xs text-gray-500">
+          💡 Speak naturally - the AI will detect when you start and stop talking.
         </div>
       </div>
     </div>
+    </>
   );
 }

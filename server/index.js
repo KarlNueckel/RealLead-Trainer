@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import scriptRoutes from './routes/scripts.js';
+import ttsRoutes from './routes/tts.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -11,8 +12,26 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Load environment variables from .env.local (root) and .env (server/)
-dotenv.config({ path: join(__dirname, '../.env.local') });
-dotenv.config({ path: join(__dirname, '.env') });
+console.log('📂 Looking for .env.local at:', join(__dirname, '../.env.local'));
+const result1 = dotenv.config({ path: join(__dirname, '../.env.local') });
+if (result1.error) {
+  console.log('⚠️ .env.local not found or has error:', result1.error.message);
+} else {
+  console.log('✅ Loaded .env.local with', Object.keys(result1.parsed || {}).length, 'variables');
+}
+
+console.log('📂 Looking for server/.env at:', join(__dirname, '.env'));
+const result2 = dotenv.config({ path: join(__dirname, '.env') });
+if (result2.error) {
+  console.log('⚠️ server/.env not found or has error:', result2.error.message);
+} else {
+  console.log('✅ Loaded server/.env with', Object.keys(result2.parsed || {}).length, 'variables');
+}
+
+// Check critical keys
+console.log('🔑 OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing');
+console.log('🔑 ELEVENLABS_API_KEY:', process.env.ELEVENLABS_API_KEY ? '✅ Set' : '❌ Missing');
+console.log('🔑 DATABASE_URL:', process.env.DATABASE_URL ? '✅ Set' : '❌ Missing');
 
 const app = express();
 const prisma = new PrismaClient();
@@ -27,6 +46,7 @@ app.use('/uploads', express.static('server/uploads'));
 
 // Routes
 app.use('/api/scripts', scriptRoutes);
+app.use('/api/tts', ttsRoutes);
 
 // ====================================
 // 🎙️ REALTIME API SESSION ENDPOINT
@@ -41,7 +61,8 @@ app.get('/api/realtime-session', async (req, res) => {
       return res.status(500).json({ error: 'OPENAI_API_KEY not configured' });
     }
 
-    console.log('🔑 Making request to OpenAI Realtime API...');
+    // No voice parameter needed - we're using text-only mode (ElevenLabs handles TTS)
+    console.log(`🔑 Making request to OpenAI Realtime API (text-only mode)...`);
     
     const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
       method: 'POST',
@@ -51,7 +72,7 @@ app.get('/api/realtime-session', async (req, res) => {
       },
       body: JSON.stringify({
         model: 'gpt-4o-realtime-preview-2024-10-01',
-        voice: 'verse',
+        // No voice parameter - using text-only modality
       }),
     });
 
