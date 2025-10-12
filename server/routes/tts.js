@@ -9,7 +9,7 @@ const router = express.Router();
 // ElevenLabs TTS endpoint
 router.post('/speak', async (req, res) => {
   try {
-    const { text, voice_id = 'EXAVITQu4vr4xnSDxMaL' } = req.body; // Default: Sarah voice
+    const { text, voice_id = 'EXAVITQu4vr4xnSDxMaL', voice_settings } = req.body; // Accept custom voice_settings
 
     if (!text) {
       return res.status(400).json({ error: 'Text is required' });
@@ -22,6 +22,14 @@ router.post('/speak', async (req, res) => {
 
     console.log(`🎙️ Generating TTS with ElevenLabs (voice: ${voice_id.substring(0, 8)}...)`);
 
+    // Use provided voice_settings or fall back to defaults
+    const voiceSettings = voice_settings || {
+      stability: 0.5,
+      similarity_boost: 0.8,
+      style: 0.0,
+      use_speaker_boost: true,
+    };
+
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice_id}`, {
       method: 'POST',
       headers: {
@@ -31,12 +39,7 @@ router.post('/speak', async (req, res) => {
       body: JSON.stringify({
         text,
         model_id: 'eleven_turbo_v2_5', // Fastest model for real-time
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.8,
-          style: 0.0,
-          use_speaker_boost: true,
-        },
+        voice_settings: voiceSettings,
       }),
     });
 

@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import scriptRoutes from './routes/scripts.js';
 import ttsRoutes from './routes/tts.js';
+import scoringRoutes from './routes/scoring.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -47,6 +48,7 @@ app.use('/uploads', express.static('server/uploads'));
 // Routes
 app.use('/api/scripts', scriptRoutes);
 app.use('/api/tts', ttsRoutes);
+app.use('/api/scoring', scoringRoutes);
 
 // ====================================
 // 🎙️ REALTIME API SESSION ENDPOINT
