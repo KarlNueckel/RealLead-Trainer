@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 /** ─────────────────────────────────────────────────────────────────────────────
@@ -10,8 +10,6 @@ export type ScriptChunk = {
   label?: string;
 };
 
-type Phase = "user" | "ai";
-
 type Props = {
   title?: string;
   scriptTitle?: string;
@@ -22,10 +20,10 @@ type Props = {
   onUserSilence?: (cb: () => void) => void;
   speakAI?: (text: string, onend: () => void) => void;
   showTimerText?: string;
-  isUserSpeaking?: boolean; // New: to control breathing circle
+  isUserSpeaking?: boolean;
 };
 
-const defaultTitle = "Voice Call in Progress";
+const defaultTitle = "Voice Call Practice";
 
 /** ─────────────────────────────────────────────────────────────────────────────
  *  MAIN COMPONENT
@@ -43,17 +41,14 @@ export default function KaraokeCall({
   isUserSpeaking = false,
 }: Props) {
   const [index, setIndex] = useState(0);
-  const [phase, setPhase] = useState<Phase>(() => (chunks[0]?.speaker === "ai" ? "ai" : "user"));
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isAISpeaking, setIsAISpeaking] = useState(false);
 
   const current = chunks[index];
   const totalSteps = chunks.length;
 
   const canPrev = index > 0;
-  const canNext = index < totalSteps - 1;
-
-  const aiSpeakingRef = useRef(false);
-  const stepLabel = useMemo(() => `Step ${index + 1} of ${totalSteps}`, [index, totalSteps]);
+  const canNext = index < totalSteps - 1 && !isAISpeaking; // Can't advance while AI is speaking
 
   /** ── NAVIGATION ───────────────────────────────────────────────────────────*/
   const goPrev = useCallback(() => {
@@ -61,20 +56,18 @@ export default function KaraokeCall({
     setIsTransitioning(true);
     setTimeout(() => {
       setIndex((i) => i - 1);
-      setPhase(chunks[index - 1].speaker);
       setIsTransitioning(false);
     }, 160);
-  }, [canPrev, chunks, index]);
+  }, [canPrev, index]);
 
   const goNext = useCallback(() => {
     if (!canNext) return;
     setIsTransitioning(true);
     setTimeout(() => {
       setIndex((i) => i + 1);
-      setPhase(chunks[index + 1].speaker);
       setIsTransitioning(false);
     }, 160);
-  }, [canNext, chunks, index]);
+  }, [canNext, index]);
 
   // Keyboard controls
   useEffect(() => {
@@ -86,93 +79,72 @@ export default function KaraokeCall({
     return () => window.removeEventListener("keydown", onKey);
   }, [goNext, goPrev]);
 
-  /** ── PHASE: USER ──────────────────────────────────────────────────────────*/
+  // Auto-start listening when on a user script slide
   useEffect(() => {
-    if (!current) return;
-    if (phase !== "user" || current.speaker !== "user") return;
-
+    if (!current || isAISpeaking) return;
+    
+    console.log("📝 User script slide - starting to listen for:", current.text.substring(0, 50));
     onStartUserListening?.();
-
-    const stopOnSilence = () => {
+    
+    // Set up silence callback - when user stops talking, trigger AI response
+    const handleSilence = () => {
+      console.log("🤫 User stopped speaking - AI will respond");
       onStopUserListening?.();
-      if (index < totalSteps - 1) {
-        const nextChunk = chunks[index + 1];
-        if (nextChunk.speaker === "ai") {
-          // Advance to AI chunk FIRST, then switch phase
-          setIndex((i) => i + 1);
-          setPhase("ai");
-        } else {
-          // Next is also user, just advance
-          setIndex((i) => i + 1);
-          setPhase("user");
-        }
-      }
+      setIsAISpeaking(true);
     };
-
-    onUserSilence?.(stopOnSilence);
+    
+    onUserSilence?.(handleSilence);
+    
     return () => {
       onStopUserListening?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, index, current?.speaker]);
+  }, [index, isAISpeaking]);
 
-  /** ── PHASE: AI ────────────────────────────────────────────────────────────*/
+  // Register AI finish callback - called by CallSimulationPage when AI audio ends
   useEffect(() => {
-    console.log("🔍 AI phase useEffect:", { phase, currentSpeaker: current?.speaker, index });
+    if (!speakAI) return;
     
-    if (!current) {
-      console.log("❌ No current chunk");
-      return;
-    }
-    if (phase !== "ai") {
-      console.log("❌ Phase is not 'ai':", phase);
-      return;
-    }
-    if (current.speaker !== "ai") {
-      console.log("❌ Current speaker is not 'ai':", current.speaker);
-      return;
-    }
-    if (!speakAI) {
-      console.log("❌ No speakAI function provided");
-      return;
-    }
-    if (aiSpeakingRef.current) {
-      console.log("❌ AI already speaking (guard)");
-      return;
-    }
-
-    console.log("✅ All checks passed - calling speakAI");
-    aiSpeakingRef.current = true;
-    speakAI(current.text, () => {
-      console.log("🎉 AI onend callback fired!");
-      aiSpeakingRef.current = false;
+    const handleAIFinish = () => {
+      console.log("✅ AI finished speaking - advancing to next slide");
+      setIsAISpeaking(false);
+      
+      // Auto-advance to next script slide
       if (index < totalSteps - 1) {
-        setIndex((i) => i + 1);
-        setPhase("user");
+        setTimeout(() => {
+          setIndex(i => i + 1);
+        }, 800); // Brief pause before next slide
       }
-    });
+    };
+    
+    // Register the callback with CallSimulationPage
+    speakAI("", handleAIFinish);
+    
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, index, current?.speaker]);
+  }, [index]); // Re-register callback for each slide
 
   /** ── RENDER ───────────────────────────────────────────────────────────────*/
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#E8EEFF] via-[#F3F6FF] to-[#FFFFFF] relative flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-[#F9FAFB] via-[#F3F6FF] to-[#EFF6FF] relative flex flex-col">
       {/* Header */}
-      <header className="backdrop-blur-md bg-white/70 border-b border-blue-100/50 sticky top-0 z-20">
-        <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl md:text-2xl font-semibold text-[#1E1E1E]">{title}</h1>
-            <span className="hidden md:inline text-gray-400">•</span>
-            <span className="hidden md:inline text-blue-600 font-medium">{scriptTitle}</span>
+      <header className="backdrop-blur-lg bg-white/80 border-b border-blue-200/40 sticky top-0 z-20 shadow-sm">
+        <div className="mx-auto max-w-6xl px-8 py-5 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{title}</h1>
+            <span className="hidden md:inline text-gray-300">•</span>
+            <span className="hidden md:inline text-blue-600 font-semibold text-lg">{scriptTitle}</span>
           </div>
           <div className="flex items-center gap-4">
             {showTimerText && (
-              <span className="text-blue-600 font-semibold text-lg">{showTimerText}</span>
+              <span className="text-blue-600 font-bold text-xl tabular-nums">{showTimerText}</span>
             )}
-            <span className="text-green-600 text-sm font-medium">● Connected</span>
+            <span className="text-green-600 text-sm font-semibold flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              Connected
+            </span>
             <button
               onClick={onEndCall}
-              className="rounded-full bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 text-sm font-semibold shadow-sm transition-colors"
+              className="rounded-full bg-red-600 hover:bg-red-700 text-white px-6 py-3 text-sm font-bold shadow-lg shadow-red-500/20 hover:shadow-xl transition-all"
             >
               End Call
             </button>
@@ -180,115 +152,165 @@ export default function KaraokeCall({
         </div>
       </header>
 
-      {/* Main content - floating script text */}
-      <div className="flex-1 flex flex-col items-center justify-center px-8 py-12">
+      {/* Main content - script OR AI speaking */}
+      <div className="flex-1 flex flex-col items-center justify-center px-8 py-16">
         <AnimatePresence mode="wait">
-          {phase === "user" && current?.speaker === "user" && (
+          {!isAISpeaking ? (
+            // Show user script slide
             <motion.div
-              key={`user-${index}`}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.4 }}
+              key={`script-${index}`}
+              initial={{ opacity: 0, scale: 0.98, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: -20 }}
+              transition={{ duration: 0.5, ease: [0.34, 1.56, 0.64, 1] }}
               className="text-center max-w-5xl"
             >
               {current?.label && (
-                <div className="text-sm text-blue-600 font-semibold uppercase tracking-wide mb-4">
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="inline-block px-4 py-2 mb-6 bg-blue-100 text-blue-700 font-bold uppercase tracking-wider text-xs rounded-full"
+                >
                   {current.label}
-                </div>
+                </motion.div>
               )}
-              <p className="text-5xl md:text-6xl font-semibold text-[#0F172A] leading-snug tracking-wide">
-                <span className="italic">&ldquo;{current?.text}&rdquo;</span>
-              </p>
+              {current?.text ? (
+                <p className="text-5xl md:text-6xl lg:text-7xl font-bold text-gray-900 leading-tight tracking-tight">
+                  <span className="italic">&ldquo;{current.text}&rdquo;</span>
+                </p>
+              ) : (
+                <p className="text-3xl text-red-600 font-bold">
+                  ⚠️ No script text for this slide
+                </p>
+              )}
+              <motion.p 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.4 }}
+                className="mt-8 text-lg text-gray-600"
+              >
+                💬 Speak this line naturally
+              </motion.p>
             </motion.div>
-          )}
-
-          {phase === "ai" && (
+          ) : (
+            // Show AI speaking animation
             <motion.div
               key="ai-speaking"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.4 }}
-              className="flex flex-col items-center justify-center mt-12"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.5, ease: [0.34, 1.56, 0.64, 1] }}
+              className="flex flex-col items-center justify-center"
             >
               <LargeSoundWave />
-              <p className="mt-8 text-xl text-gray-600 font-medium">
-                AI Prospect is speaking…
-              </p>
+              <motion.p 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+                className="mt-10 text-2xl text-gray-700 font-semibold"
+              >
+                AI Prospect is responding…
+              </motion.p>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Breathing circle indicator */}
+      {/* Voice Indicator */}
       <div className="relative flex flex-col items-center justify-center mb-12">
         <motion.div
-          animate={{ scale: isUserSpeaking ? [1, 1.2, 1] : [1, 1.15, 1] }}
+          animate={{ scale: isUserSpeaking ? [1, 1.2, 1] : isAISpeaking ? [1, 1.15, 1] : 1 }}
           transition={{ 
-            repeat: Infinity, 
-            duration: isUserSpeaking ? 1.5 : 2, 
-            ease: "easeInOut" 
+            type: "spring",
+            stiffness: isUserSpeaking ? 150 : 100,
+            damping: 15,
+            repeat: (isUserSpeaking || isAISpeaking) ? Infinity : 0,
+            duration: isUserSpeaking ? 1.2 : 1.8
           }}
-          className={`w-20 h-20 rounded-full transition-all duration-500 ${
-            phase === "user"
-              ? "bg-blue-500 shadow-[0_0_40px_10px_rgba(37,99,235,0.3)]"
-              : "bg-violet-500 shadow-[0_0_40px_10px_rgba(139,92,246,0.3)]"
+          className={`w-24 h-24 rounded-full transition-colors duration-500 ${
+            isAISpeaking
+              ? "bg-gradient-to-br from-violet-500 to-violet-600 shadow-[0_0_50px_15px_rgba(139,92,246,0.35)]"
+              : "bg-gradient-to-br from-blue-500 to-blue-600 shadow-[0_0_50px_15px_rgba(59,130,246,0.35)]"
           }`}
         />
-        <p className="mt-4 text-gray-600 text-lg font-medium">
-          {isUserSpeaking 
+        <motion.p 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-6 text-gray-700 text-lg font-semibold"
+        >
+          {isAISpeaking
+            ? "🤖 AI Responding…"
+            : isUserSpeaking
             ? "🎙️ You're speaking…"
-            : phase === "user"
-            ? "🫧 Waiting for your response…"
-            : "🤖 AI Prospect Responding…"}
-        </p>
+            : "🫧 Ready when you are…"}
+        </motion.p>
+      </div>
+
+      {/* Call Info Bar */}
+      <div className="px-8 mb-6">
+        <div className="max-w-3xl mx-auto bg-white/60 backdrop-blur-md border border-gray-200/50 rounded-2xl px-6 py-4 shadow-lg">
+          <div className="flex items-center justify-center gap-6 text-sm font-semibold text-gray-700 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-blue-600">📖</span>
+              <span>Script {index + 1} of {totalSteps}</span>
+            </div>
+            <span className="text-gray-300">|</span>
+            <div className="flex items-center gap-2">
+              <span>📝</span>
+              <span className="text-blue-600">{scriptTitle}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Progress dots */}
-      <div className="flex items-center justify-center gap-2 mb-6">
+      <div className="flex items-center justify-center gap-2.5 mb-8">
         {chunks.map((_, i) => (
-          <span
+          <motion.span
             key={i}
-            className={
-              "h-2 rounded-full transition-all duration-300 " +
-              (i === index ? "w-10 bg-blue-600" : i < index ? "w-2 bg-blue-400" : "w-2 bg-gray-300")
-            }
+            initial={false}
+            animate={{
+              width: i === index ? 40 : 8,
+              backgroundColor: i === index ? "#3B82F6" : i < index ? "#93C5FD" : "#D1D5DB"
+            }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="h-2.5 rounded-full"
           />
         ))}
       </div>
 
-      {/* Navigation - subtle, low placement */}
-      <div className="pb-8 w-full flex justify-between px-12 text-gray-700">
+      {/* Navigation - prominent */}
+      <div className="pb-10 w-full flex justify-center gap-6 px-12">
         <button
           onClick={goPrev}
           disabled={!canPrev || isTransitioning}
-          className="px-6 py-2 rounded-full hover:bg-blue-50 hover:text-blue-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+          className="px-10 py-4 rounded-xl bg-white/80 backdrop-blur-sm text-gray-700 font-semibold hover:bg-white hover:shadow-lg border-2 border-gray-300 hover:border-blue-400 transition-all disabled:opacity-30 disabled:cursor-not-allowed text-lg"
         >
           ← Previous
         </button>
         <button
           onClick={goNext}
           disabled={!canNext || isTransitioning}
-          className="px-6 py-2 rounded-full bg-blue-600 text-white font-medium hover:bg-blue-700 shadow-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          className="px-10 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-500/30 hover:shadow-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed text-lg"
         >
           Next →
         </button>
       </div>
 
-      {/* Footer tip - very subtle */}
-      <footer className="pb-4 text-center text-xs text-gray-400">
-        💡 Speak naturally — the AI detects when you start and stop talking.
+      {/* Footer tip */}
+      <footer className="pb-6 text-center text-sm text-gray-500 font-medium">
+        💡 Speak your line naturally — AI will respond after you stop talking
       </footer>
 
-      {/* DEBUG BUTTON - Remove this in production */}
-      {phase === "ai" && (
+      {/* DEBUG: Manual AI skip button */}
+      {isAISpeaking && (
         <button
           onClick={() => {
-            console.log("🔴 MANUAL DEBUG: Simulating AI finish");
+            console.log("🔴 MANUAL DEBUG: Skipping AI response");
+            setIsAISpeaking(false);
             if (index < totalSteps - 1) {
-              setIndex((i) => i + 1);
-              setPhase("user");
+              setIndex(i => i + 1);
             }
           }}
           className="fixed top-24 right-6 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg text-xs font-bold z-50"
@@ -296,6 +318,14 @@ export default function KaraokeCall({
           DEBUG: Skip AI
         </button>
       )}
+
+      {/* DEBUG: Show current state */}
+      <div className="fixed bottom-4 left-4 bg-black/80 text-white text-xs px-3 py-2 rounded-lg font-mono z-50">
+        <div>Index: {index}/{totalSteps}</div>
+        <div>AI Speaking: {isAISpeaking ? "YES" : "NO"}</div>
+        <div>User Speaking: {isUserSpeaking ? "YES" : "NO"}</div>
+        <div>Script: {current?.text?.substring(0, 20) || "NONE"}...</div>
+      </div>
     </div>
   );
 }
@@ -304,30 +334,33 @@ export default function KaraokeCall({
  *  LARGE SOUND WAVE
  *  ───────────────────────────────────────────────────────────────────────────*/
 function LargeSoundWave() {
-  const bars = 8;
-  const heights = [60, 90, 70, 100, 75, 95, 80, 65];
+  const bars = 12;
+  const heights = [50, 75, 60, 95, 70, 110, 85, 100, 65, 90, 75, 55];
+  const delays = [0, 0.1, 0.05, 0.15, 0.08, 0.2, 0.12, 0.18, 0.06, 0.14, 0.1, 0.04];
 
   return (
-    <>
-      <div className="flex gap-2.5 items-end">
-        {Array.from({ length: bars }).map((_, i) => (
-          <div
-            key={i}
-            className="w-4 rounded-full bg-violet-500/90"
-            style={{
-              height: `${heights[i]}px`,
-              animation: "wave 1s ease-in-out infinite",
-              animationDelay: `${i * 0.1}s`,
-            }}
-          />
-        ))}
-      </div>
-      <style>{`
-        @keyframes wave {
-          0%, 100% { transform: scaleY(0.6); opacity: .7; }
-          50% { transform: scaleY(1.3); opacity: 1; }
-        }
-      `}</style>
-    </>
+    <div className="flex gap-3 items-end">
+      {Array.from({ length: bars }).map((_, i) => (
+        <motion.div
+          key={i}
+          className="w-2 rounded-full bg-gradient-to-t from-violet-600 to-violet-400"
+          initial={{ scaleY: 0.5, opacity: 0.6 }}
+          animate={{ 
+            scaleY: [0.5, 1.4, 0.6, 1.2, 0.5],
+            opacity: [0.6, 1, 0.7, 1, 0.6]
+          }}
+          transition={{
+            repeat: Infinity,
+            duration: 1.2,
+            delay: delays[i],
+            ease: "easeInOut"
+          }}
+          style={{
+            height: `${heights[i]}px`,
+            originY: 1
+          }}
+        />
+      ))}
+    </div>
   );
 }

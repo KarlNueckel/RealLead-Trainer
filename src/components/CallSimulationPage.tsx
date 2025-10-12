@@ -18,7 +18,6 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [status, setStatus] = useState<string>("Initializing...");
   const [isInitializing, setIsInitializing] = useState(true);
   const [initProgress, setInitProgress] = useState(0);
@@ -36,7 +35,7 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const apiFinishedSendingRef = useRef(false); // Track when API stops sending chunks
   const playbackSafetyTimeoutRef = useRef<number | null>(null); // Safety fallback after API done
 
-  // Parse script into KaraokeCall chunks on mount
+  // Parse script into KaraokeCall chunks on mount - ONLY USER LINES
   useEffect(() => {
     if (config.script?.content) {
       const chunks: ScriptChunk[] = [];
@@ -50,42 +49,61 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
         
         // Check if first line is a label/header
         const firstLine = lines[0];
-        if (firstLine.match(/^(Introduction|Opening|Purpose|Value|Question|Response|Closing|Next Steps|Qualifying Questions|Reconnection|Recap|Call to Action):/i)) {
+        if (firstLine.match(/^(Introduction|Opening|Purpose|Value|Question|Response|Closing|Next Steps|Qualifying Questions|Reconnection|Recap|Call to Action|Market Expertise|Unique Value):/i)) {
           currentLabel = firstLine.replace(/:.*/, ''); // Extract label
           
           // Join remaining lines as the text
           const text = lines.slice(1).join('\n').replace(/^[""]|[""]$/g, '').trim();
           if (text) {
+            // ONLY add user script lines - AI responds dynamically
             chunks.push({
-              speaker: "user", // User says these lines
+              speaker: "user",
               text: text,
               label: currentLabel
             });
-            // Add a placeholder AI response after each user line
-            chunks.push({
-              speaker: "ai",
-              text: "" // AI will respond naturally via Realtime API
-            });
           }
         } else {
-          // Regular text - alternate between user and ai
+          // Regular text without label - treat as user line
           const text = section.replace(/^[""]|[""]$/g, '').trim();
           if (text) {
             chunks.push({
-              speaker: chunks.length % 2 === 0 ? "user" : "ai",
-              text: text
+              speaker: "user",
+              text: text,
+              label: currentLabel
             });
           }
         }
       }
 
       setScriptChunks(chunks);
-      console.log("📚 Parsed script chunks:", chunks.map((c, i) => `${i}: ${c.speaker} - ${c.text.substring(0, 30)}...`));
+      console.log("📚 Parsed script chunks (USER ONLY):", chunks.length, "chunks");
+      console.log("📚 Full chunks:", chunks.map((c, i) => `\n${i}: [${c.label}] ${c.text.substring(0, 50)}...`).join(""));
+    } else {
+      console.log("⚠️ No script content to parse");
     }
   }, [config.script]);
 
   // System prompt based on configuration
   const getSystemPrompt = () => {
+    // If persona is selected, use its custom prompt with scenario context
+    if (config.persona) {
+      const scenarioContext = {
+        "fsbo": "The scenario is a FSBO (For Sale By Owner) - you're a homeowner selling without an agent.",
+        "expired": "The scenario is an expired listing - you're a frustrated homeowner whose listing just expired.",
+        "buyer-consult": "The scenario is a buyer consultation - you're a prospective home buyer.",
+        "seller-consult": "The scenario is a seller consultation - you're a homeowner considering selling.",
+        "cold-call": "The scenario is a cold call - you're a homeowner receiving an unexpected call.",
+        "circle-prospect": "The scenario is circle prospecting - you're a homeowner in a neighborhood with recent sales.",
+      };
+      
+      return `${config.persona.gptSystemPrompt}
+
+${scenarioContext[config.scenario as keyof typeof scenarioContext]}
+
+Keep responses conversational and realistic. Respond naturally as if in a real phone conversation. Stay in character throughout the call.`;
+    }
+
+    // Fallback to old system (if no persona selected)
     const scenarioPrompts = {
       "fsbo": "You are a homeowner selling your house without a real estate agent (FSBO). You're fielding calls from agents trying to convince you to list with them.",
       "expired": "You are a frustrated homeowner whose listing just expired without selling. You're disappointed but may be open to relisting with the right agent.",
@@ -415,14 +433,13 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
     }
   };
 
-  // Play audio delta from AI
   // Generate and play ElevenLabs TTS audio
   const generateElevenLabsAudio = async (text: string) => {
     try {
       console.log(`🎙️ Generating ElevenLabs audio for: "${text.substring(0, 50)}..."`);
-      setIsAISpeaking(true);
       
       const voiceId = config.voice || 'EXAVITQu4vr4xnSDxMaL';
+      const voiceSettings = config.persona?.voiceSettings;
       
       const response = await fetch('/api/tts/speak', {
         method: 'POST',
@@ -432,6 +449,7 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
         body: JSON.stringify({
           text,
           voice_id: voiceId,
+          voice_settings: voiceSettings,
         }),
       });
 
@@ -450,7 +468,6 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       
       audio.onended = () => {
         console.log('✅ ElevenLabs audio playback complete');
-        setIsAISpeaking(false);
         URL.revokeObjectURL(audioUrl);
         
         // Trigger callback for KaraokeCall
@@ -463,7 +480,6 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
 
       audio.onerror = (error) => {
         console.error('❌ Audio playback error:', error);
-        setIsAISpeaking(false);
         URL.revokeObjectURL(audioUrl);
       };
 
@@ -471,7 +487,6 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       
     } catch (error) {
       console.error('❌ ElevenLabs TTS error:', error);
-      setIsAISpeaking(false);
       
       // Still trigger callback to continue flow
       if (aiFinishCallbackRef.current) {
@@ -482,43 +497,6 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
     }
   };
 
-  const playAudioDelta = async (base64Audio: string) => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext({ sampleRate: 24000 });
-    }
-
-    try {
-      // Decode base64 to ArrayBuffer
-      const binaryString = atob(base64Audio);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-
-      // Convert PCM16 to AudioBuffer
-      const int16Array = new Int16Array(bytes.buffer);
-      const float32Array = new Float32Array(int16Array.length);
-      
-      for (let i = 0; i < int16Array.length; i++) {
-        float32Array[i] = int16Array[i] / (int16Array[i] < 0 ? 0x8000 : 0x7FFF);
-      }
-
-      const audioBuffer = audioContextRef.current.createBuffer(
-        1,
-        float32Array.length,
-        24000
-      );
-      audioBuffer.getChannelData(0).set(float32Array);
-
-      audioQueueRef.current.push(audioBuffer);
-
-      if (!isPlayingRef.current) {
-        playNextAudio();
-      }
-    } catch (error) {
-      console.error("Audio playback error:", error);
-    }
-  };
 
   // Play queued audio
   const playNextAudio = () => {
@@ -630,30 +608,23 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       <>
         {isInitializing && <LoadingOverlay />}
         <KaraokeCall
-        title="🎙️ Voice Call in Progress"
+        title="🎙️ Voice Call Practice"
         scriptTitle={config.script.name}
         chunks={scriptChunks}
         onEndCall={handleEndCall}
         onStartUserListening={() => {
-          // Already listening via WebSocket
           console.log("📝 Ready for user speech");
         }}
         onStopUserListening={() => {
-          // Keep listening via WebSocket
           console.log("📝 User finished speaking");
         }}
         onUserSilence={(cb) => {
-          console.log("🤫 onUserSilence called - storing silence callback", typeof cb);
-          // Store the callback to be triggered when speech stops
+          console.log("🤫 onUserSilence called - storing silence callback");
           userSilenceCallbackRef.current = cb;
-          console.log("✅ Silence callback stored, ref is now:", !!userSilenceCallbackRef.current);
         }}
         speakAI={(_text, onend) => {
-          console.log("🎵 speakAI called - storing onend callback");
-          // Store callback to be triggered when AI audio finishes
+          console.log("🎵 speakAI called - AI will respond via WebSocket, storing onend callback");
           aiFinishCallbackRef.current = onend;
-          // The audio will play automatically via WebSocket response
-          // onend will be called in playNextAudio when queue is empty
         }}
         showTimerText={formatTime(timeElapsed)}
         isUserSpeaking={isRecording}

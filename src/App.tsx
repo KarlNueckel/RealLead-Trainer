@@ -1,73 +1,76 @@
-import { useState } from "react";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import { LandingPage } from "./components/LandingPage";
-import { ConfigurationPage, CallConfig } from "./components/ConfigurationPage";
-import { CallSimulationPage, TranscriptEntry } from "./components/CallSimulationPage";
+import CallScenarios from "./pages/CallScenarios";
+import ChooseAILead from "./pages/ChooseAILead";
+import PickScript from "./pages/PickScript";
+import { CallSimulationPage } from "./components/CallSimulationPage";
 import { SessionSummaryPage } from "./components/SessionSummaryPage";
 
-type Screen = "landing" | "configuration" | "simulation" | "summary";
+function ConversationWrapper() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { config } = location.state || {};
 
-export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>("landing");
-  const [callConfig, setCallConfig] = useState<CallConfig | null>(null);
-  const [sessionData, setSessionData] = useState<{
-    transcript: TranscriptEntry[];
-    duration: number;
-  } | null>(null);
-
-  const handleStart = () => {
-    setCurrentScreen("configuration");
-  };
-
-  const handleBackToLanding = () => {
-    setCurrentScreen("landing");
-    setCallConfig(null);
-    setSessionData(null);
-  };
-
-  const handleStartCall = (config: CallConfig) => {
-    setCallConfig(config);
-    setCurrentScreen("simulation");
-  };
-
-  const handleEndCall = (transcript: TranscriptEntry[], duration: number) => {
-    setSessionData({ transcript, duration });
-    setCurrentScreen("summary");
-  };
-
-  const handleNewSession = () => {
-    setSessionData(null);
-    setCurrentScreen("configuration");
-  };
+  if (!config) {
+    // Redirect back if no config
+    navigate("/call-scenarios");
+    return <div>Redirecting...</div>;
+  }
 
   return (
-    <div className="size-full">
-      {currentScreen === "landing" && (
-        <LandingPage onStart={handleStart} />
-      )}
-      
-      {currentScreen === "configuration" && (
-        <ConfigurationPage 
-          onBack={handleBackToLanding}
-          onStartCall={handleStartCall}
-        />
-      )}
-      
-      {currentScreen === "simulation" && callConfig && (
-        <CallSimulationPage 
-          config={callConfig}
-          onEndCall={handleEndCall}
-        />
-      )}
-      
-      {currentScreen === "summary" && sessionData && (
-        <SessionSummaryPage 
-          transcript={sessionData.transcript}
-          duration={sessionData.duration}
-          onBackToHome={handleBackToLanding}
-          onNewSession={handleNewSession}
-        />
-      )}
-    </div>
+    <CallSimulationPage 
+      config={config}
+      onEndCall={(transcript, duration) => {
+        navigate("/summary", { 
+          state: { 
+            transcript, 
+            duration,
+            scenario: config.scenario,
+            difficulty: config.difficulty,
+            persona: config.persona?.displayName
+          } 
+        });
+      }}
+    />
   );
 }
 
+function SummaryWrapper() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { transcript, duration, scenario, difficulty, persona } = location.state || {};
+
+  if (!transcript || !duration) {
+    navigate("/");
+    return <div>Redirecting...</div>;
+  }
+
+  return (
+    <SessionSummaryPage 
+      transcript={transcript}
+      duration={duration}
+      scenario={scenario}
+      difficulty={difficulty}
+      persona={persona}
+      onBackToHome={() => navigate("/")}
+      onNewSession={() => navigate("/call-scenarios")}
+    />
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/call-scenarios" element={<CallScenarios />} />
+        <Route path="/choose-ai-lead" element={<ChooseAILead />} />
+        <Route path="/pick-script" element={<PickScript />} />
+        <Route path="/conversation" element={<ConversationWrapper />} />
+        <Route path="/summary" element={<SummaryWrapper />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;

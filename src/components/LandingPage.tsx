@@ -2,83 +2,83 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { PhoneCall, Sparkles, Target, TrendingUp } from "lucide-react";
 
-interface LandingPageProps {
-  onStart: () => void;
-}
+import { useNavigate } from "react-router-dom";
 
-export function LandingPage({ onStart }: LandingPageProps) {
+export function LandingPage() {
+  const navigate = useNavigate();
+  const onStart = () => navigate("/call-scenarios");
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-accent/30">
+    <div className="min-h-screen bg-gradient-to-br from-[#F9FAFB] via-[#F3F6FF] to-[#EFF6FF]">
       {/* Hero Section */}
-      <div className="container mx-auto px-4 py-16 md:py-24">
-        <div className="max-w-4xl mx-auto text-center space-y-8">
+      <div className="container mx-auto px-4 py-20 md:py-28">
+        <div className="max-w-5xl mx-auto text-center space-y-10">
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
-            <Sparkles className="size-4 text-primary" />
-            <span className="text-sm font-medium">AI-Powered Sales Training</span>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/60 backdrop-blur-sm border border-blue-200/50 shadow-sm">
+            <Sparkles className="size-4 text-blue-600" />
+            <span className="text-sm font-semibold text-blue-700">AI-Powered Sales Training</span>
           </div>
 
           {/* Main Heading */}
-          <div className="space-y-4">
-            <h1 className="text-4xl md:text-6xl font-bold tracking-tight">
+          <div className="space-y-6">
+            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-gray-900 leading-tight">
               Master Your Sales Calls with{" "}
-              <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 bg-clip-text text-transparent">
                 RealLead Trainer
               </span>
             </h1>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            <p className="text-xl md:text-2xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
               Practice realistic sales conversations with AI. Build confidence, refine your pitch, 
               and close more deals with live voice training.
             </p>
           </div>
 
           {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
-            <Button size="lg" onClick={onStart} className="text-base px-8 h-12">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-6">
+            <Button size="lg" onClick={onStart} className="text-base px-10 h-14 shadow-lg shadow-blue-500/20 hover:shadow-xl hover:shadow-blue-500/30 transition-all">
               <PhoneCall className="mr-2 size-5" />
               Start Training Now
             </Button>
-            <Button size="lg" variant="outline" className="text-base px-8 h-12">
+            <Button size="lg" variant="outline" className="text-base px-10 h-14 bg-white/50 backdrop-blur-sm hover:bg-white/80">
               Learn More
             </Button>
           </div>
         </div>
 
         {/* Feature Cards */}
-        <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto mt-20">
-          <Card className="border-primary/20 hover:border-primary/40 transition-all hover:shadow-lg">
-            <CardHeader>
-              <div className="size-12 rounded-lg bg-primary/10 flex items-center justify-center mb-2">
-                <PhoneCall className="size-6 text-primary" />
+        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto mt-24">
+          <Card className="border-blue-200/50 hover:border-blue-400/60 transition-all hover:shadow-xl bg-white/70 backdrop-blur-sm">
+            <CardHeader className="px-8 py-6">
+              <div className="size-14 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mb-4 shadow-lg shadow-blue-500/30">
+                <PhoneCall className="size-7 text-white" />
               </div>
-              <CardTitle>Real-Time Voice AI</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-lg font-semibold text-gray-900">Real-Time Voice AI</CardTitle>
+              <CardDescription className="text-sm text-gray-600 leading-relaxed mt-2">
                 Practice with OpenAI's advanced voice technology. Get natural, 
                 conversational responses just like a real prospect.
               </CardDescription>
             </CardHeader>
           </Card>
 
-          <Card className="border-primary/20 hover:border-primary/40 transition-all hover:shadow-lg">
-            <CardHeader>
-              <div className="size-12 rounded-lg bg-primary/10 flex items-center justify-center mb-2">
-                <Target className="size-6 text-primary" />
+          <Card className="border-blue-200/50 hover:border-blue-400/60 transition-all hover:shadow-xl bg-white/70 backdrop-blur-sm">
+            <CardHeader className="px-8 py-6">
+              <div className="size-14 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/30">
+                <Target className="size-7 text-white" />
               </div>
-              <CardTitle>Scenario-Based Training</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-lg font-semibold text-gray-900">Scenario-Based Training</CardTitle>
+              <CardDescription className="text-sm text-gray-600 leading-relaxed mt-2">
                 Choose from cold calls, follow-ups, or product demos. 
                 Customize difficulty to match your skill level.
               </CardDescription>
             </CardHeader>
           </Card>
 
-          <Card className="border-primary/20 hover:border-primary/40 transition-all hover:shadow-lg">
-            <CardHeader>
-              <div className="size-12 rounded-lg bg-primary/10 flex items-center justify-center mb-2">
-                <TrendingUp className="size-6 text-primary" />
+          <Card className="border-blue-200/50 hover:border-blue-400/60 transition-all hover:shadow-xl bg-white/70 backdrop-blur-sm">
+            <CardHeader className="px-8 py-6">
+              <div className="size-14 rounded-xl bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center mb-4 shadow-lg shadow-violet-500/30">
+                <TrendingUp className="size-7 text-white" />
               </div>
-              <CardTitle>Instant Feedback</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-lg font-semibold text-gray-900">Instant Feedback</CardTitle>
+              <CardDescription className="text-sm text-gray-600 leading-relaxed mt-2">
                 Review full transcripts and analyze your performance. 
                 Track progress and improve with every session.
               </CardDescription>
@@ -87,21 +87,21 @@ export function LandingPage({ onStart }: LandingPageProps) {
         </div>
 
         {/* Stats Section */}
-        <div className="mt-20 max-w-3xl mx-auto">
-          <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
-            <CardContent className="pt-6">
-              <div className="grid grid-cols-3 gap-8 text-center">
+        <div className="mt-24 max-w-4xl mx-auto">
+          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200/50 shadow-xl">
+            <CardContent className="px-8 py-8">
+              <div className="grid grid-cols-3 gap-12 text-center">
                 <div>
-                  <div className="text-3xl md:text-4xl font-bold text-primary">100%</div>
-                  <div className="text-sm text-muted-foreground mt-1">AI-Powered</div>
+                  <div className="text-4xl md:text-5xl font-extrabold bg-gradient-to-br from-blue-600 to-blue-700 bg-clip-text text-transparent">100%</div>
+                  <div className="text-sm font-medium text-gray-700 mt-2">AI-Powered</div>
                 </div>
                 <div>
-                  <div className="text-3xl md:text-4xl font-bold text-primary">24/7</div>
-                  <div className="text-sm text-muted-foreground mt-1">Available</div>
+                  <div className="text-4xl md:text-5xl font-extrabold bg-gradient-to-br from-indigo-600 to-indigo-700 bg-clip-text text-transparent">24/7</div>
+                  <div className="text-sm font-medium text-gray-700 mt-2">Available</div>
                 </div>
                 <div>
-                  <div className="text-3xl md:text-4xl font-bold text-primary">∞</div>
-                  <div className="text-sm text-muted-foreground mt-1">Practice Sessions</div>
+                  <div className="text-4xl md:text-5xl font-extrabold bg-gradient-to-br from-violet-600 to-violet-700 bg-clip-text text-transparent">∞</div>
+                  <div className="text-sm font-medium text-gray-700 mt-2">Practice Sessions</div>
                 </div>
               </div>
             </CardContent>
@@ -109,9 +109,9 @@ export function LandingPage({ onStart }: LandingPageProps) {
         </div>
 
         {/* Footer CTA */}
-        <div className="text-center mt-16 space-y-4">
-          <h3 className="text-2xl font-semibold">Ready to level up your sales game?</h3>
-          <Button size="lg" onClick={onStart} className="text-base px-8 h-12">
+        <div className="text-center mt-20 space-y-6">
+          <h3 className="text-3xl md:text-4xl font-bold text-gray-900">Ready to level up your sales game?</h3>
+          <Button size="lg" onClick={onStart} className="text-base px-10 h-14 shadow-lg shadow-blue-500/20 hover:shadow-xl hover:shadow-blue-500/30 transition-all">
             Get Started Free
           </Button>
         </div>
