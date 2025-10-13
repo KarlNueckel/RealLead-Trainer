@@ -21,6 +21,7 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const [status, setStatus] = useState<string>("Initializing...");
   const [isInitializing, setIsInitializing] = useState(true);
   const [initProgress, setInitProgress] = useState(0);
+  const [shouldEndCall, setShouldEndCall] = useState(false);
   
   // Script state
   const [scriptChunks, setScriptChunks] = useState<ScriptChunk[]>([]);
@@ -34,6 +35,8 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const isPlayingRef = useRef(false);
   const apiFinishedSendingRef = useRef(false); // Track when API stops sending chunks
   const playbackSafetyTimeoutRef = useRef<number | null>(null); // Safety fallback after API done
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null); // Track current playing audio
+  const currentAudioUrlRef = useRef<string | null>(null); // Track blob URL for cleanup
 
   // Parse script into KaraokeCall chunks on mount - ONLY USER LINES
   useEffect(() => {
@@ -185,8 +188,8 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
               turn_detection: {
                 type: "server_vad",
                 threshold: 0.5,
-                prefix_padding_ms: 1000, // Increased from 300ms to capture first word
-                silence_duration_ms: 1200, // Increased from 700ms for more natural pauses
+                prefix_padding_ms: 300,  // Reduced - enough to capture first word without delay
+                silence_duration_ms: 600, // Reduced from 1200ms - faster response, still allows natural pauses
               },
             },
           }));
@@ -244,6 +247,44 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
 
     return () => clearInterval(timer);
   }, [isConnected]);
+
+  // Handle AI-initiated call ending
+  useEffect(() => {
+    if (shouldEndCall) {
+      console.log('🚨 shouldEndCall triggered - ending call via useEffect');
+      const finalTranscript = [...transcript];
+      const finalDuration = timeElapsed;
+      
+      console.log('📊 Final transcript:', finalTranscript);
+      console.log('⏱️ Final duration:', finalDuration);
+      
+      // Stop any playing audio
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+      if (currentAudioUrlRef.current) {
+        URL.revokeObjectURL(currentAudioUrlRef.current);
+        currentAudioUrlRef.current = null;
+      }
+      
+      // Close connections
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      
+      // Then navigate
+      console.log('🔄 Calling onEndCall...');
+      onEndCall(finalTranscript, finalDuration);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldEndCall]);
 
   // Handle Realtime API events
   const handleRealtimeEvent = async (event: any) => {
@@ -328,6 +369,8 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
       case "input_audio_buffer.speech_started":
         console.log("🎤 User started speaking");
         setIsRecording(true);
+        // Stop AI audio if it's still playing (user is interrupting)
+        stopCurrentAudio();
         break;
 
       case "input_audio_buffer.speech_stopped":
@@ -433,10 +476,275 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
     }
   };
 
+  // Stop any currently playing audio
+  const stopCurrentAudio = () => {
+    if (currentAudioRef.current) {
+      console.log('🛑 Stopping currently playing audio');
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current.onended = null;
+      currentAudioRef.current.onerror = null;
+      currentAudioRef.current = null;
+    }
+    
+    if (currentAudioUrlRef.current) {
+      URL.revokeObjectURL(currentAudioUrlRef.current);
+      currentAudioUrlRef.current = null;
+    }
+  };
+
+  // Generate disconnect beep tone (beep beep beep)
+  const playDisconnectTone = () => {
+    return new Promise<void>((resolve) => {
+      // Option 1: Try to load custom disconnect sound from public folder
+      const customSoundPath = '/disconnect-tone.mp3'; // Place file in public/ folder if you want custom sound
+      
+      const tryCustomSound = async () => {
+        try {
+          const response = await fetch(customSoundPath);
+          if (response.ok) {
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            
+            audio.onended = () => {
+              URL.revokeObjectURL(audioUrl);
+              resolve();
+            };
+            
+            audio.onerror = () => {
+              URL.revokeObjectURL(audioUrl);
+              // Fallback to generated tone
+              playGeneratedTone();
+            };
+            
+            await audio.play();
+            console.log('📞 Playing custom disconnect sound');
+            return; // Custom sound playing, don't call playGeneratedTone
+          }
+        } catch (err) {
+          // Error fetching custom sound, fall back to generated tone
+        }
+        
+        // If we get here, custom sound didn't work - use generated tone
+        playGeneratedTone();
+      };
+      
+      // Option 2: Generate tone programmatically (fallback)
+      const playGeneratedTone = () => {
+        if (!audioContextRef.current) {
+          resolve();
+          return;
+        }
+
+        const audioContext = audioContextRef.current;
+        const now = audioContext.currentTime;
+        
+        // Create oscillator for beep sound
+        const playBeep = (startTime: number) => {
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          // Busy signal frequency (around 480 Hz + 620 Hz, but we'll use 480 Hz for simplicity)
+          oscillator.frequency.value = 480;
+          oscillator.type = 'sine';
+          
+          // Beep envelope
+          gainNode.gain.setValueAtTime(0, startTime);
+          gainNode.gain.linearRampToValueAtTime(0.3, startTime + 0.01);
+          gainNode.gain.linearRampToValueAtTime(0.3, startTime + 0.25);
+          gainNode.gain.linearRampToValueAtTime(0, startTime + 0.3);
+          
+          oscillator.start(startTime);
+          oscillator.stop(startTime + 0.3);
+        };
+        
+        // Play 3 beeps with gaps (typical disconnect sound)
+        playBeep(now);
+        playBeep(now + 0.5);
+        playBeep(now + 1.0);
+        
+        console.log('📞 Playing generated disconnect tone (beep beep beep)');
+        
+        // Resolve after all beeps are done
+        setTimeout(() => resolve(), 1500);
+      };
+      
+      // Try custom sound first, fall back to generated tone
+      tryCustomSound();
+    });
+  };
+
+  // Check if AI message indicates call ending
+  const isCallEndingMessage = (message: string): boolean => {
+    const lowerMessage = message.toLowerCase();
+    
+    const endingPhrases = [
+      'goodbye',
+      'good bye',
+      'have a great day',
+      'have a good day',
+      'have a nice day',
+      'talk to you later',
+      'speak to you later',
+      'take care',
+      "i'll let you go",
+      "i will let you go",
+      'thanks for your time',
+      'thank you for your time',
+      "i won't take up more of your time",
+      "i won't take any more of your time",
+      'not interested',
+      "i'm not interested",
+      "don't call again",
+      "don't contact me",
+      "remove me from your list",
+      "i'm hanging up",
+      "i am hanging up",
+    ];
+    
+    // Check if message contains any ending phrases
+    // Also check if it's near the end of the message (last 100 chars)
+    const messageEnd = lowerMessage.slice(-100);
+    
+    return endingPhrases.some(phrase => 
+      messageEnd.includes(phrase) || lowerMessage.includes(phrase)
+    );
+  };
+
+  // Apply audio post-processing filter for mature voice (removes brightness)
+  const applyMatureVoiceFilter = async (audioBlob: Blob): Promise<string> => {
+    try {
+      // Only apply filter for Quinn persona (hard difficulty)
+      if (config.persona?.id !== 'quinn') {
+        return URL.createObjectURL(audioBlob);
+      }
+
+      console.log('🎛️ Applying mature voice filter to reduce brightness...');
+
+      if (!audioContextRef.current) {
+        return URL.createObjectURL(audioBlob);
+      }
+
+      const audioContext = audioContextRef.current;
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      // Create offline context for processing
+      const offlineContext = new OfflineAudioContext(
+        audioBuffer.numberOfChannels,
+        audioBuffer.length,
+        audioBuffer.sampleRate
+      );
+
+      const source = offlineContext.createBufferSource();
+      source.buffer = audioBuffer;
+
+      // Low-pass filter at 4.2 kHz to remove "sparkle"
+      const lowpass = offlineContext.createBiquadFilter();
+      lowpass.type = 'lowshelf';
+      lowpass.frequency.value = 4200;
+      lowpass.gain.value = -3; // Reduce high frequencies
+
+      // Reduce presence around 2 kHz (removes brightness)
+      const midCut = offlineContext.createBiquadFilter();
+      midCut.type = 'peaking';
+      midCut.frequency.value = 2000;
+      midCut.Q.value = 1.0;
+      midCut.gain.value = -2;
+
+      // Slight compression for more grounded sound
+      const compressor = offlineContext.createDynamicsCompressor();
+      compressor.threshold.value = -24;
+      compressor.knee.value = 30;
+      compressor.ratio.value = 2;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.25;
+
+      // Connect the chain
+      source.connect(lowpass);
+      lowpass.connect(midCut);
+      midCut.connect(compressor);
+      compressor.connect(offlineContext.destination);
+
+      source.start();
+      const renderedBuffer = await offlineContext.startRendering();
+
+      // Convert back to blob
+      const wavBlob = await bufferToWave(renderedBuffer);
+      return URL.createObjectURL(wavBlob);
+
+    } catch (err) {
+      console.warn('⚠️ Audio filter failed, using original:', err);
+      return URL.createObjectURL(audioBlob);
+    }
+  };
+
+  // Convert AudioBuffer to WAV Blob
+  const bufferToWave = (buffer: AudioBuffer): Promise<Blob> => {
+    const length = buffer.length * buffer.numberOfChannels * 2;
+    const arrayBuffer = new ArrayBuffer(44 + length);
+    const view = new DataView(arrayBuffer);
+    const channels = [];
+    let offset = 0;
+    let pos = 0;
+
+    // Write WAV header
+    const setUint16 = (data: number) => { view.setUint16(pos, data, true); pos += 2; };
+    const setUint32 = (data: number) => { view.setUint32(pos, data, true); pos += 4; };
+
+    // "RIFF" chunk descriptor
+    setUint32(0x46464952);
+    setUint32(36 + length);
+    setUint32(0x45564157);
+
+    // "fmt " sub-chunk
+    setUint32(0x20746d66);
+    setUint32(16);
+    setUint16(1);
+    setUint16(buffer.numberOfChannels);
+    setUint32(buffer.sampleRate);
+    setUint32(buffer.sampleRate * 2 * buffer.numberOfChannels);
+    setUint16(buffer.numberOfChannels * 2);
+    setUint16(16);
+
+    // "data" sub-chunk
+    setUint32(0x61746164);
+    setUint32(length);
+
+    // Write interleaved data
+    for (let i = 0; i < buffer.numberOfChannels; i++) {
+      channels.push(buffer.getChannelData(i));
+    }
+
+    while (pos < length + 44) {
+      for (let i = 0; i < buffer.numberOfChannels; i++) {
+        const sample = Math.max(-1, Math.min(1, channels[i][offset]));
+        view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+        pos += 2;
+      }
+      offset++;
+    }
+
+    return Promise.resolve(new Blob([arrayBuffer], { type: 'audio/wav' }));
+  };
+
   // Generate and play ElevenLabs TTS audio
   const generateElevenLabsAudio = async (text: string) => {
     try {
       console.log(`🎙️ Generating ElevenLabs audio for: "${text.substring(0, 50)}..."`);
+      
+      // Check if AI is ending the call
+      const isEnding = isCallEndingMessage(text);
+      if (isEnding) {
+        console.log('📞 AI is ending the call - will play disconnect tone after message');
+      }
+      
+      // CRITICAL: Stop any currently playing audio before starting new one
+      stopCurrentAudio();
       
       const voiceId = config.voice || 'EXAVITQu4vr4xnSDxMaL';
       const voiceSettings = config.persona?.voiceSettings;
@@ -459,19 +767,51 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
 
       // Get audio blob
       const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      // Apply audio post-processing for Quinn to reduce brightness
+      const audioUrl = await applyMatureVoiceFilter(audioBlob);
       
       console.log('✅ ElevenLabs audio ready, playing...');
 
       // Play audio
       const audio = new Audio(audioUrl);
       
+      // Store references for cleanup
+      currentAudioRef.current = audio;
+      currentAudioUrlRef.current = audioUrl;
+      
       audio.onended = () => {
         console.log('✅ ElevenLabs audio playback complete');
-        URL.revokeObjectURL(audioUrl);
+        
+        // Cleanup
+        if (currentAudioUrlRef.current === audioUrl) {
+          URL.revokeObjectURL(audioUrl);
+          currentAudioUrlRef.current = null;
+        }
+        if (currentAudioRef.current === audio) {
+          currentAudioRef.current = null;
+        }
+        
+        // If AI is ending the call, play disconnect tone then end
+        if (isEnding) {
+          console.log('📞 Playing disconnect tone...');
+          
+          // Play disconnect tone, then end call
+          playDisconnectTone().then(() => {
+            console.log('📞 AI ended the call - setting shouldEndCall to true');
+            
+            // Trigger end call via state (React-friendly way)
+            setTimeout(() => {
+              console.log('📞 Setting shouldEndCall = true...');
+              setShouldEndCall(true);
+            }, 500);
+          });
+          return;
+        }
         
         // Trigger callback for KaraokeCall
         if (aiFinishCallbackRef.current) {
+          console.log('🎯 Triggering AI finish callback after audio ended');
           const callback = aiFinishCallbackRef.current;
           aiFinishCallbackRef.current = null;
           callback();
@@ -480,13 +820,31 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
 
       audio.onerror = (error) => {
         console.error('❌ Audio playback error:', error);
-        URL.revokeObjectURL(audioUrl);
+        
+        // Cleanup
+        if (currentAudioUrlRef.current === audioUrl) {
+          URL.revokeObjectURL(audioUrl);
+          currentAudioUrlRef.current = null;
+        }
+        if (currentAudioRef.current === audio) {
+          currentAudioRef.current = null;
+        }
+        
+        // Still trigger callback to continue flow
+        if (aiFinishCallbackRef.current) {
+          const callback = aiFinishCallbackRef.current;
+          aiFinishCallbackRef.current = null;
+          callback();
+        }
       };
 
       await audio.play();
       
     } catch (error) {
       console.error('❌ ElevenLabs TTS error:', error);
+      
+      // Cleanup
+      stopCurrentAudio();
       
       // Still trigger callback to continue flow
       if (aiFinishCallbackRef.current) {
@@ -545,6 +903,9 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
 
   // Cleanup
   const cleanup = () => {
+    // Stop any playing audio
+    stopCurrentAudio();
+    
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
     }
@@ -557,8 +918,23 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
   };
 
   const handleEndCall = () => {
-    cleanup();
-    onEndCall(transcript, timeElapsed);
+    console.log('🔴 handleEndCall called');
+    console.log('📊 Transcript entries:', transcript.length);
+    console.log('📊 Full transcript:', transcript);
+    console.log('⏱️ Time elapsed:', timeElapsed);
+    
+    // Store values before cleanup
+    const finalTranscript = [...transcript];
+    const finalDuration = timeElapsed;
+    
+    console.log('🔄 Calling onEndCall prop to navigate to summary...');
+    onEndCall(finalTranscript, finalDuration);
+    
+    // Cleanup after navigation callback (small delay to ensure navigation completes)
+    setTimeout(() => {
+      console.log('🧹 Cleaning up resources...');
+      cleanup();
+    }, 100);
   };
 
   const formatTime = (seconds: number) => {

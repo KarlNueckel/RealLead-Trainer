@@ -40,6 +40,7 @@ router.post('/speak', async (req, res) => {
         text,
         model_id: 'eleven_turbo_v2_5', // Fastest model for real-time
         voice_settings: voiceSettings,
+        optimize_streaming_latency: 3, // Maximum speed optimization (0-4, higher = faster)
       }),
     });
 
