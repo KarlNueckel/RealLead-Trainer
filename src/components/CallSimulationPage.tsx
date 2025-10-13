@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { CallConfig } from "./ConfigurationPage";
-import KaraokeCall, { ScriptChunk } from "./KaraokeCall";
+import { UserTalkingPage } from "./callUI/UserTalkingPage";
+import { AITalkingPage } from "./callUI/AITalkingPage";
+
+export type ScriptChunk = {
+  speaker: "user" | "ai";
+  text: string;
+  label?: string;
+};
 
 export interface TranscriptEntry {
   speaker: "user" | "ai";
@@ -17,6 +24,7 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
+  const callStartTimeRef = useRef<number>(0);
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState<string>("Initializing...");
   const [isInitializing, setIsInitializing] = useState(true);
@@ -25,8 +33,15 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   
   // Script state
   const [scriptChunks, setScriptChunks] = useState<ScriptChunk[]>([]);
+  const [currentScriptIndex, setCurrentScriptIndex] = useState(0);
+  const [isAISpeaking, setIsAISpeaking] = useState(false);
   const userSilenceCallbackRef = useRef<(() => void) | null>(null);
   const aiFinishCallbackRef = useRef<(() => void) | null>(null);
+  const userSilenceTimeoutRef = useRef<number | null>(null);
+  const lastUserSpeechTimeRef = useRef<number>(Date.now());
+  const hasUserSpokenRef = useRef<boolean>(false);
+  const initialGreetingTimeoutRef = useRef<number | null>(null);
+  const silenceCountRef = useRef<number>(0);
   
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -40,6 +55,10 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
 
   // Parse script into KaraokeCall chunks on mount - ONLY USER LINES
   useEffect(() => {
+    console.log("🔍 Script parsing effect triggered");
+    console.log("🔍 config.script:", config.script);
+    console.log("🔍 config.script?.content:", config.script?.content);
+    
     if (config.script?.content) {
       const chunks: ScriptChunk[] = [];
       let currentLabel = "";
@@ -47,12 +66,14 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       // Split by double newlines to get sections
       const sections = config.script.content.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
       
+      console.log("📝 Found sections:", sections.length);
+      
       for (const section of sections) {
         const lines = section.split('\n').map(l => l.trim()).filter(Boolean);
         
         // Check if first line is a label/header
         const firstLine = lines[0];
-        if (firstLine.match(/^(Introduction|Opening|Purpose|Value|Question|Response|Closing|Next Steps|Qualifying Questions|Reconnection|Recap|Call to Action|Market Expertise|Unique Value):/i)) {
+        if (firstLine.match(/^(Introduction|Opening|Purpose|Value|Question|Response|Closing|Next Steps|Qualifying Questions|Reconnection|Recap|Call to Action|Market Expertise|Unique Value|Value Proposition|Acknowledgment|Value Question|Positioning|Empathy Opening|Direct Question|Solution Positioning|Qualifying Question|Objection Response):/i)) {
           currentLabel = firstLine.replace(/:.*/, ''); // Extract label
           
           // Join remaining lines as the text
@@ -82,7 +103,8 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       console.log("📚 Parsed script chunks (USER ONLY):", chunks.length, "chunks");
       console.log("📚 Full chunks:", chunks.map((c, i) => `\n${i}: [${c.label}] ${c.text.substring(0, 50)}...`).join(""));
     } else {
-      console.log("⚠️ No script content to parse");
+      console.log("⚠️ No script content to parse - script will not be displayed");
+      console.log("⚠️ Config:", config);
     }
   }, [config.script]);
 
@@ -241,6 +263,9 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
   useEffect(() => {
     if (!isConnected) return;
 
+    // Set call start time
+    callStartTimeRef.current = Date.now();
+
     const timer = setInterval(() => {
       setTimeElapsed((prev) => prev + 1);
     }, 1000);
@@ -320,12 +345,17 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
               const aiMessage = textContent.text;
               console.log("🎤 AI response text:", aiMessage);
               
+              // Calculate actual elapsed time
+              const actualElapsed = callStartTimeRef.current > 0 
+                ? Math.floor((Date.now() - callStartTimeRef.current) / 1000)
+                : timeElapsed;
+              
               setTranscript((prev) => [
                 ...prev,
                 {
                   speaker: "ai",
                   message: aiMessage,
-                  timestamp: timeElapsed,
+                  timestamp: actualElapsed,
                 },
               ]);
               
@@ -355,12 +385,17 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
         console.log("✅ User speech transcribed:", event.transcript);
         const userMessage = event.transcript;
         if (userMessage) {
+          // Calculate actual elapsed time
+          const actualElapsed = callStartTimeRef.current > 0 
+            ? Math.floor((Date.now() - callStartTimeRef.current) / 1000)
+            : timeElapsed;
+          
           setTranscript((prev) => [
             ...prev,
             {
       speaker: "user",
               message: userMessage,
-      timestamp: timeElapsed,
+      timestamp: actualElapsed,
             },
           ]);
         }
@@ -369,6 +404,24 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
       case "input_audio_buffer.speech_started":
         console.log("🎤 User started speaking");
         setIsRecording(true);
+        lastUserSpeechTimeRef.current = Date.now();
+        hasUserSpokenRef.current = true;
+        
+        // Reset silence count when user speaks
+        silenceCountRef.current = 0;
+        
+        // Clear initial greeting timeout if user speaks
+        if (initialGreetingTimeoutRef.current) {
+          clearTimeout(initialGreetingTimeoutRef.current);
+          initialGreetingTimeoutRef.current = null;
+        }
+        
+        // Clear any existing silence timeout
+        if (userSilenceTimeoutRef.current) {
+          clearTimeout(userSilenceTimeoutRef.current);
+          userSilenceTimeoutRef.current = null;
+        }
+        
         // Stop AI audio if it's still playing (user is interrupting)
         stopCurrentAudio();
         break;
@@ -377,6 +430,8 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
         console.log("🛑 User stopped speaking");
         console.log("🔍 Silence callback ref exists?", !!userSilenceCallbackRef.current);
         setIsRecording(false);
+        lastUserSpeechTimeRef.current = Date.now();
+        
         // Trigger user silence callback for KaraokeCall
         if (userSilenceCallbackRef.current) {
           console.log("🎯 Triggering user silence callback");
@@ -384,6 +439,58 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
         } else {
           console.log("❌ No silence callback registered!");
         }
+        
+        // Start silence timeout - if user doesn't speak, AI prompts them or hangs up
+        if (userSilenceTimeoutRef.current) {
+          clearTimeout(userSilenceTimeoutRef.current);
+        }
+        
+        // Determine timeout duration based on silence count
+        const timeoutDuration = silenceCountRef.current === 0 ? 5000 : 15000; // 5s first, then 15s more (20s total)
+        
+        userSilenceTimeoutRef.current = window.setTimeout(() => {
+          const timeSinceLastSpeech = Date.now() - lastUserSpeechTimeRef.current;
+          console.log(`⏰ Silence timeout triggered (${timeoutDuration}ms)`);
+          console.log("⏰ Time since last speech:", timeSinceLastSpeech, "ms");
+          console.log("⏰ Silence count:", silenceCountRef.current);
+          
+          // Only trigger if user hasn't spoken
+          const requiredSilence = silenceCountRef.current === 0 ? 4500 : 14500;
+          if (timeSinceLastSpeech >= requiredSilence) {
+            silenceCountRef.current++;
+            console.log("🤖 User has been silent too long - silence count now:", silenceCountRef.current);
+            
+            // Send a message to the AI to prompt the user or hang up
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              let promptText = "";
+              
+              if (silenceCountRef.current === 1) {
+                // First silence (5 seconds) - prompt the user
+                promptText = "[User has been silent for 5 seconds - prompt them naturally to continue the conversation. Based on your persona, say something like 'Hello? Are you still there?' or 'I'm still here. What else did you want to discuss?']";
+              } else {
+                // Second silence (total 20 seconds) - hang up immediately
+                promptText = "[User has been silent for 20 seconds total after you already prompted them. You've had enough - hang up NOW. Say a brief dismissive ending like 'I don't have time for this. Goodbye.' or just 'Goodbye.' and END THE CALL immediately.]";
+              }
+              
+              wsRef.current.send(JSON.stringify({
+                type: "conversation.item.create",
+                item: {
+                  type: "message",
+                  role: "user",
+                  content: [{
+                    type: "input_text",
+                    text: promptText
+                  }]
+                }
+              }));
+              
+              // Trigger response
+              wsRef.current.send(JSON.stringify({
+                type: "response.create"
+              }));
+            }
+          }
+        }, timeoutDuration);
         break;
 
       case "input_audio_buffer.committed":
@@ -468,6 +575,31 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
       // Hide loading screen after a brief moment
       setTimeout(() => {
         setIsInitializing(false);
+        
+        // Start 5-second initial greeting timeout
+        // If user doesn't speak within 5 seconds, AI will say "Hello?"
+        initialGreetingTimeoutRef.current = window.setTimeout(() => {
+          if (!hasUserSpokenRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            console.log("⏰ 5-second initial greeting timeout - AI will greet first");
+            
+            wsRef.current.send(JSON.stringify({
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "user",
+                content: [{
+                  type: "input_text",
+                  text: "[Agent hasn't spoken yet - greet them briefly to start the conversation. Say something like 'Hello?' or 'Is anyone there?']"
+                }]
+              }
+            }));
+            
+            // Trigger response
+            wsRef.current.send(JSON.stringify({
+              type: "response.create"
+            }));
+          }
+        }, 5000);
       }, 300);
     } catch (error) {
       console.error("Microphone error:", error);
@@ -604,15 +736,52 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
       "remove me from your list",
       "i'm hanging up",
       "i am hanging up",
+      // Frustration-based endings
+      "i think i'll keep looking",
+      "this isn't a good fit",
+      "not on the same page",
+      "don't think this is going to work",
+      "not worth my time",
+      "you don't know what you're doing",
+      "clearly don't know",
+      "this conversation isn't worth",
+      "i'll reach out if i change my mind",
+      "good luck",
+      "thanks anyway",
+      "thank you anyway",
+      // Silence-triggered endings
+      "i don't have time for this",
+      "don't have time for this",
+      "wasting my time",
+      "this is wasting my time",
+      "i should go",
+      "not the right time",
+      "call back later",
+      "i'll call back",
+      // Abrupt endings
+      "*click*",
+      "[hangs up]",
+      "[call ends]",
     ];
     
     // Check if message contains any ending phrases
-    // Also check if it's near the end of the message (last 100 chars)
-    const messageEnd = lowerMessage.slice(-100);
+    // Also check if it's near the end of the message (last 150 chars)
+    const messageEnd = lowerMessage.slice(-150);
     
-    return endingPhrases.some(phrase => 
+    // Check for ending phrases in the message or at the end
+    const hasEndingPhrase = endingPhrases.some(phrase => 
       messageEnd.includes(phrase) || lowerMessage.includes(phrase)
     );
+    
+    // Also detect if the message is very short and dismissive (likely hanging up)
+    const isDismissive = (
+      message.length < 30 && 
+      (lowerMessage.includes('bye') || 
+       lowerMessage.includes('done') || 
+       lowerMessage.includes('enough'))
+    );
+    
+    return hasEndingPhrase || isDismissive;
   };
 
   // Apply audio post-processing filter for mature voice (removes brightness)
@@ -792,6 +961,21 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
           currentAudioRef.current = null;
         }
         
+        // AI stopped speaking
+        setIsAISpeaking(false);
+        
+        // Advance to next script chunk after a brief pause
+        setTimeout(() => {
+          setCurrentScriptIndex(prev => {
+            const nextIndex = prev + 1;
+            if (nextIndex < scriptChunks.length) {
+              console.log(`📖 Advancing to script chunk ${nextIndex}/${scriptChunks.length}`);
+              return nextIndex;
+            }
+            return prev;
+          });
+        }, 500);
+        
         // If AI is ending the call, play disconnect tone then end
         if (isEnding) {
           console.log('📞 Playing disconnect tone...');
@@ -809,6 +993,57 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
           return;
         }
         
+        // Start silence timeout after AI finishes speaking
+        console.log('🎵 AI finished speaking, starting silence timeout');
+        lastUserSpeechTimeRef.current = Date.now();
+        
+        // Clear any existing timeout
+        if (userSilenceTimeoutRef.current) {
+          clearTimeout(userSilenceTimeoutRef.current);
+        }
+        
+        // Determine timeout duration based on silence count
+        const timeoutDuration = silenceCountRef.current === 0 ? 5000 : 15000;
+        
+        userSilenceTimeoutRef.current = window.setTimeout(() => {
+          const timeSinceLastSpeech = Date.now() - lastUserSpeechTimeRef.current;
+          console.log(`⏰ Silence timeout triggered after AI spoke (${timeoutDuration}ms)`);
+          console.log("⏰ Time since AI finished:", timeSinceLastSpeech, "ms");
+          console.log("⏰ Silence count:", silenceCountRef.current);
+          
+          const requiredSilence = silenceCountRef.current === 0 ? 4500 : 14500;
+          if (timeSinceLastSpeech >= requiredSilence) {
+            silenceCountRef.current++;
+            console.log("🤖 User has been silent too long - silence count now:", silenceCountRef.current);
+            
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              let promptText = "";
+              
+              if (silenceCountRef.current === 1) {
+                promptText = "[User has been silent for 5 seconds - prompt them naturally to continue the conversation. Based on your persona, say something like 'Hello? Are you still there?' or 'I'm still here. What else did you want to discuss?']";
+              } else {
+                promptText = "[User has been silent for 20 seconds total after you already prompted them. You've had enough - hang up NOW. Say a brief dismissive ending like 'I don't have time for this. Goodbye.' or just 'Goodbye.' and END THE CALL immediately.]";
+              }
+              
+              wsRef.current.send(JSON.stringify({
+                type: "conversation.item.create",
+                item: {
+                  type: "message",
+                  role: "user",
+                  content: [{
+                    type: "input_text",
+                    text: promptText
+                  }]
+                }
+              }));
+              
+              wsRef.current.send(JSON.stringify({
+                type: "response.create"
+              }));
+            }
+          }
+        }, timeoutDuration);
+        
         // Trigger callback for KaraokeCall
         if (aiFinishCallbackRef.current) {
           console.log('🎯 Triggering AI finish callback after audio ended');
@@ -820,6 +1055,9 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
 
       audio.onerror = (error) => {
         console.error('❌ Audio playback error:', error);
+        
+        // AI stopped speaking
+        setIsAISpeaking(false);
         
         // Cleanup
         if (currentAudioUrlRef.current === audioUrl) {
@@ -838,10 +1076,14 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
         }
       };
 
+      // Set AI speaking state when audio starts
+      setIsAISpeaking(true);
+      
       await audio.play();
       
     } catch (error) {
       console.error('❌ ElevenLabs TTS error:', error);
+      setIsAISpeaking(false);
       
       // Cleanup
       stopCurrentAudio();
@@ -905,6 +1147,18 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
   const cleanup = () => {
     // Stop any playing audio
     stopCurrentAudio();
+    
+    // Clear silence timeout
+    if (userSilenceTimeoutRef.current) {
+      clearTimeout(userSilenceTimeoutRef.current);
+      userSilenceTimeoutRef.current = null;
+    }
+    
+    // Clear initial greeting timeout
+    if (initialGreetingTimeoutRef.current) {
+      clearTimeout(initialGreetingTimeoutRef.current);
+      initialGreetingTimeoutRef.current = null;
+    }
     
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -978,33 +1232,34 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
     </div>
   );
 
-  // If script is available, use KaraokeCall interface
+  // If script is available, use new UI interface
   if (config.script && scriptChunks.length > 0) {
+    const currentChunk = scriptChunks[currentScriptIndex];
+    const contactName = config.persona?.displayName || "AI Prospect";
+    const profileImage = config.persona?.image || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop";
+    const callDuration = formatTime(timeElapsed);
+    
     return (
       <>
         {isInitializing && <LoadingOverlay />}
-        <KaraokeCall
-        title="🎙️ Voice Call Practice"
-        scriptTitle={config.script.name}
-        chunks={scriptChunks}
-        onEndCall={handleEndCall}
-        onStartUserListening={() => {
-          console.log("📝 Ready for user speech");
-        }}
-        onStopUserListening={() => {
-          console.log("📝 User finished speaking");
-        }}
-        onUserSilence={(cb) => {
-          console.log("🤫 onUserSilence called - storing silence callback");
-          userSilenceCallbackRef.current = cb;
-        }}
-        speakAI={(_text, onend) => {
-          console.log("🎵 speakAI called - AI will respond via WebSocket, storing onend callback");
-          aiFinishCallbackRef.current = onend;
-        }}
-        showTimerText={formatTime(timeElapsed)}
-        isUserSpeaking={isRecording}
-      />
+        {!isInitializing && (
+          isAISpeaking ? (
+            <AITalkingPage
+              contactName={contactName}
+              profileImage={profileImage}
+              onEndCall={handleEndCall}
+              callDuration={callDuration}
+            />
+          ) : (
+            <UserTalkingPage
+              contactName={contactName}
+              profileImage={profileImage}
+              scriptText={currentChunk?.text || "Ready to start..."}
+              onEndCall={handleEndCall}
+              callDuration={callDuration}
+            />
+          )
+        )}
       </>
     );
   }
@@ -1077,7 +1332,7 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
               }`}
             >
               <div className="text-sm font-semibold mb-1">
-                {entry.speaker === "user" ? "You" : "AI Prospect"}
+                {entry.speaker === "user" ? "You" : config.persona?.displayName || "AI Prospect"}
               </div>
               <div>{entry.message}</div>
               <div className={`text-xs mt-1 ${
