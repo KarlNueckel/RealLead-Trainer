@@ -113,7 +113,7 @@ export default function KaraokeCall({
       if (index < totalSteps - 1) {
         setTimeout(() => {
           setIndex(i => i + 1);
-        }, 800); // Brief pause before next slide
+        }, 200); // Minimal pause before next slide for smooth transition
       }
     };
     

@@ -21,6 +21,11 @@ function ConversationWrapper() {
     <CallSimulationPage 
       config={config}
       onEndCall={(transcript, duration) => {
+        console.log('🚀 onEndCall triggered in App.tsx');
+        console.log('📊 Transcript received:', transcript);
+        console.log('⏱️ Duration received:', duration);
+        console.log('🗂️ Config:', { scenario: config.scenario, difficulty: config.difficulty, persona: config.persona?.displayName });
+        
         navigate("/summary", { 
           state: { 
             transcript, 
@@ -30,6 +35,8 @@ function ConversationWrapper() {
             persona: config.persona?.displayName
           } 
         });
+        
+        console.log('✅ Navigate called to /summary');
       }}
     />
   );
@@ -40,10 +47,21 @@ function SummaryWrapper() {
   const navigate = useNavigate();
   const { transcript, duration, scenario, difficulty, persona } = location.state || {};
 
-  if (!transcript || !duration) {
-    navigate("/");
+  console.log('📍 SummaryWrapper - location.state:', location.state);
+  console.log('📊 Transcript:', transcript, 'type:', typeof transcript, 'is array:', Array.isArray(transcript));
+  console.log('⏱️ Duration:', duration, 'type:', typeof duration);
+
+  // Check for undefined/null specifically, not falsy values (0 is a valid duration)
+  if (!transcript || duration === undefined || duration === null) {
+    console.log('❌ Missing transcript or duration - redirecting to home');
+    console.log('   Transcript:', transcript, 'Duration:', duration);
+    
+    // Use useEffect to prevent navigation during render
+    setTimeout(() => navigate("/"), 0);
     return <div>Redirecting...</div>;
   }
+  
+  console.log('✅ SummaryWrapper has valid data, rendering SessionSummaryPage');
 
   return (
     <SessionSummaryPage 
