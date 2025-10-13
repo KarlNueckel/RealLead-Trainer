@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Persona } from "../config/personas";
 
 /** ─────────────────────────────────────────────────────────────────────────────
  *  TYPES
@@ -14,6 +15,7 @@ type Props = {
   title?: string;
   scriptTitle?: string;
   chunks: ScriptChunk[];
+  persona?: Persona;
   onEndCall?: () => void;
   onStartUserListening?: () => void;
   onStopUserListening?: () => void;
@@ -32,6 +34,7 @@ export default function KaraokeCall({
   title = defaultTitle,
   scriptTitle = "Script",
   chunks,
+  persona,
   onEndCall,
   onStartUserListening,
   onStopUserListening,
@@ -204,14 +207,26 @@ export default function KaraokeCall({
               className="flex flex-col items-center justify-center"
             >
               <LargeSoundWave />
-              <motion.p 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="mt-10 text-2xl text-gray-700 font-semibold"
-              >
-                AI Prospect is responding…
-              </motion.p>
+              <div className="mt-10 flex flex-col items-center gap-3">
+                {persona?.image && (
+                  <motion.img 
+                    src={persona.image} 
+                    alt={persona.displayName} 
+                    className="w-16 h-16 rounded-full object-cover border-2 border-violet-300 shadow-lg"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.2 }}
+                  />
+                )}
+                <motion.p 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.3 }}
+                  className="text-2xl text-gray-700 font-semibold"
+                >
+                  {persona?.displayName || "AI Prospect"} is responding…
+                </motion.p>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -240,7 +255,7 @@ export default function KaraokeCall({
           className="mt-6 text-gray-700 text-lg font-semibold"
         >
           {isAISpeaking
-            ? "🤖 AI Responding…"
+            ? `🤖 ${persona?.displayName || "AI"} Responding…`
             : isUserSpeaking
             ? "🎙️ You're speaking…"
             : "🫧 Ready when you are…"}

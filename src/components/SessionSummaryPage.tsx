@@ -1,13 +1,14 @@
 import { TranscriptEntry } from "./CallSimulationPage";
 import { GradeDisplay } from "./GradeDisplay";
 import { useState, useEffect } from "react";
+import { Persona } from "../config/personas";
 
 interface SessionSummaryPageProps {
   transcript: TranscriptEntry[];
   duration: number;
   scenario?: string;
   difficulty?: string;
-  persona?: string;
+  persona?: Persona;
   onBackToHome: () => void;
   onNewSession: () => void;
 }
@@ -44,6 +45,29 @@ export function SessionSummaryPage({
     const evaluateCall = async () => {
       try {
         setIsEvaluating(true);
+        
+        // Check if user actually spoke during the call
+        const userMessages = transcript.filter((entry) => entry.speaker === "user");
+        
+        if (userMessages.length === 0) {
+          // User didn't say anything - give appropriate grade
+          setEvaluation({
+            score: 0,
+            grade: "F",
+            strengths: [],
+            improvements: [
+              "No participation detected",
+              "Speak clearly into your microphone",
+              "Ensure microphone permissions are enabled",
+              "Try speaking louder if the system isn't detecting your voice"
+            ],
+            breakdown: { opening: 0, value: 0, objections: 0, questions: 0, closing: 0 },
+            summary: "You did not speak during this call. Make sure your microphone is working and try again."
+          });
+          setIsEvaluating(false);
+          return;
+        }
+        
         const response = await fetch('http://localhost:3001/api/scoring/evaluate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -62,25 +86,43 @@ export function SessionSummaryPage({
           console.error('Failed to evaluate call');
           // Provide a default score if API fails
           setEvaluation({
-            score: 75,
-            grade: "C+",
-            strengths: ["Completed the call", "Maintained conversation"],
-            improvements: ["Evaluation unavailable"],
-            breakdown: { opening: 15, value: 15, objections: 15, questions: 15, closing: 15 },
-            summary: "Call completed successfully. Evaluation service temporarily unavailable."
+            score: 70,
+            grade: "C",
+            strengths: ["Completed the call with " + userMessages.length + " message(s)"],
+            improvements: ["Evaluation service temporarily unavailable - please try again"],
+            breakdown: { opening: 14, value: 14, objections: 14, questions: 14, closing: 14 },
+            summary: "Call completed. Unable to provide detailed evaluation at this time."
           });
         }
       } catch (error) {
         console.error('Error evaluating call:', error);
-        // Provide a default score if API fails
-        setEvaluation({
-          score: 75,
-          grade: "C+",
-          strengths: ["Completed the call"],
-          improvements: ["Evaluation unavailable"],
-          breakdown: { opening: 15, value: 15, objections: 15, questions: 15, closing: 15 },
-          summary: "Call completed successfully."
-        });
+        
+        // Check if user spoke before showing generic error
+        const userMessages = transcript.filter((entry) => entry.speaker === "user");
+        
+        if (userMessages.length === 0) {
+          setEvaluation({
+            score: 0,
+            grade: "F",
+            strengths: [],
+            improvements: [
+              "No participation detected",
+              "Ensure your microphone is working",
+              "Check browser permissions for microphone access"
+            ],
+            breakdown: { opening: 0, value: 0, objections: 0, questions: 0, closing: 0 },
+            summary: "You did not speak during this call. Please check your microphone settings."
+          });
+        } else {
+          setEvaluation({
+            score: 70,
+            grade: "C",
+            strengths: ["Completed the call with " + userMessages.length + " message(s)"],
+            improvements: ["Evaluation service unavailable - score based on participation only"],
+            breakdown: { opening: 14, value: 14, objections: 14, questions: 14, closing: 14 },
+            summary: "Call completed successfully."
+          });
+        }
       } finally {
         setIsEvaluating(false);
       }
@@ -203,8 +245,23 @@ export function SessionSummaryPage({
                   entry.speaker === "user" ? "border-blue-500 bg-blue-50/30" : "border-violet-500 bg-violet-50/30"
                 }`}>
                   <div className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
-                    <span>{entry.speaker === "user" ? "🎙️" : "🤖"}</span>
-                    <span>{entry.speaker === "user" ? "You" : "AI Prospect"}</span>
+                    {entry.speaker === "user" ? (
+                      <>
+                        <span>🎙️</span>
+                        <span>You</span>
+                      </>
+                    ) : (
+                      <>
+                        {persona?.image && (
+                          <img 
+                            src={persona.image} 
+                            alt={persona.displayName} 
+                            className="w-6 h-6 rounded-full object-cover border border-gray-300"
+                          />
+                        )}
+                        <span>{persona?.displayName || "AI Prospect"}</span>
+                      </>
+                    )}
                     <span className="text-gray-400">•</span>
                     <span className="text-gray-600 font-mono text-xs">{formatTime(entry.timestamp)}</span>
                   </div>

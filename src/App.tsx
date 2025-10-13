@@ -32,7 +32,7 @@ function ConversationWrapper() {
             duration,
             scenario: config.scenario,
             difficulty: config.difficulty,
-            persona: config.persona?.displayName
+            persona: config.persona
           } 
         });
         
