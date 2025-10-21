@@ -40,7 +40,8 @@ const PORT = 3001; // Fixed port for backend
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+// Allow large webhook payloads (transcripts can be big)
+app.use(express.json({ limit: '10mb' }));
 
 // Serve uploaded files statically
 app.use('/uploads', express.static('server/uploads'));
@@ -49,6 +50,109 @@ app.use('/uploads', express.static('server/uploads'));
 app.use('/api/scripts', scriptRoutes);
 app.use('/api/tts', ttsRoutes);
 app.use('/api/scoring', scoringRoutes);
+
+// ====================================
+// 📞 VAPI WEBHOOK + TRANSCRIPT CACHE
+// ====================================
+
+// In‑memory store for last transcript (normalized for UI)
+let lastTranscript = [];
+// Map of callId -> { transcript: TranscriptEntry[], durationMs: number, endedAt: number }
+const transcriptsById = new Map();
+
+// Normalize webhook payload into UI-friendly shape
+function normalizeTranscriptPayload(body) {
+  const data = body?.data ?? body?.payload ?? {};
+
+  const transcriptRaw =
+    data?.transcript ||
+    data?.artifacts?.transcript ||
+    [];
+
+  // Helper to classify speaker consistently
+  const classify = (e) => {
+    const fields = [e?.role, e?.speaker, e?.sender, e?.from, e?.source, e?.author, e?.participant?.role]
+      .filter(Boolean)
+      .map((s) => String(s).toLowerCase());
+    const has = (n) => fields.some((f) => f.includes(n));
+    if (e?.is_user === true) return 'user';
+    if (has('assistant') || has('agent') || has('ai') || has('bot')) return 'ai';
+    if (has('user') || has('client') || has('human') || has('caller')) return 'user';
+    return 'user'; // safer default to reduce false AI attribution
+  };
+
+  // UI expects: { speaker: 'user'|'ai', message: string, timestamp: number }
+  const transcript = Array.isArray(transcriptRaw)
+    ? transcriptRaw.map((e) => {
+        const speaker = classify(e);
+        const message = e.text ?? e.content ?? e.message ?? e.transcript ?? '';
+        const timestamp = Number(e.timestamp_ms ?? e.ts ?? e.time_ms ?? Date.now());
+        return { speaker, message, timestamp };
+      })
+    : [];
+
+  const durationMs = Number(
+    data.duration_ms ?? data.call_duration_ms ?? data.duration ?? 0
+  );
+  const callId = data.call_id ?? data.id ?? data.callId ?? null;
+
+  return { callId, transcript, durationMs };
+}
+
+// Webhook endpoint for Vapi CLI/ngrok forwarding
+// Example CLI: vapi listen --forward-to localhost:3001/webhook
+app.post('/webhook', (req, res) => {
+  try {
+    const type = req.body?.type || req.body?.event || 'unknown';
+    console.log('📞 Vapi webhook event:', type);
+
+    // Attempt to parse transcript regardless of type to be resilient
+    const { callId, transcript, durationMs } = normalizeTranscriptPayload(req.body);
+    if (type === 'end-of-call-report' || (Array.isArray(transcript) && transcript.length > 0)) {
+      lastTranscript = transcript || [];
+      if (callId) {
+        transcriptsById.set(callId, {
+          transcript: lastTranscript,
+          durationMs,
+          endedAt: Date.now(),
+        });
+      }
+      console.log('✅ Transcript received:', Array.isArray(lastTranscript) ? lastTranscript.length : 0, 'entries', `(callId=${callId || 'n/a'})`);
+      if (Array.isArray(lastTranscript) && lastTranscript.length > 0) {
+        console.log('   First entries:', lastTranscript.slice(0, 2));
+      }
+    } else {
+      console.log('⚠️ No transcript found in payload');
+    }
+
+    res.status(200).send('ok');
+  } catch (e) {
+    console.error('Webhook handler error:', e);
+    res.status(200).send('ok');
+  }
+});
+
+// Simple route for frontend to fetch latest transcript
+app.get('/api/transcript', (req, res) => {
+  try {
+    // Keep legacy shape: array only
+    res.json(lastTranscript || []);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
+// Fetch transcript by callId
+app.get('/api/transcripts/:callId', (req, res) => {
+  try {
+    const callId = req.params.callId;
+    const record = transcriptsById.get(callId);
+    if (!record) return res.status(404).json({ error: 'not_found' });
+    res.json(record);
+  } catch (e) {
+    res.status(500).json({ error: 'failed' });
+  }
+});
 
 // ====================================
 // 🎙️ REALTIME API SESSION ENDPOINT

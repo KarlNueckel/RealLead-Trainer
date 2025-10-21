@@ -6,7 +6,7 @@ import PickScript from "./pages/PickScript";
 import { CallSimulationPage } from "./components/CallSimulationPage";
 import AveryPage from "./pages/AveryPage";
 import TestVapi from "./TestVapi";
-import { SessionSummaryPage } from "./components/SessionSummaryPage";
+import SummaryWrapper from "./components/SummaryWrapper";
 
 function ConversationWrapper() {
   const location = useLocation();
@@ -44,39 +44,7 @@ function ConversationWrapper() {
   );
 }
 
-function SummaryWrapper() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { transcript, duration, scenario, difficulty, persona } = location.state || {};
-
-  console.log('📍 SummaryWrapper - location.state:', location.state);
-  console.log('📊 Transcript:', transcript, 'type:', typeof transcript, 'is array:', Array.isArray(transcript));
-  console.log('⏱️ Duration:', duration, 'type:', typeof duration);
-
-  // Check for undefined/null specifically, not falsy values (0 is a valid duration)
-  if (!transcript || duration === undefined || duration === null) {
-    console.log('❌ Missing transcript or duration - redirecting to home');
-    console.log('   Transcript:', transcript, 'Duration:', duration);
-    
-    // Use useEffect to prevent navigation during render
-    setTimeout(() => navigate("/"), 0);
-    return <div>Redirecting...</div>;
-  }
-  
-  console.log('✅ SummaryWrapper has valid data, rendering SessionSummaryPage');
-
-  return (
-    <SessionSummaryPage 
-      transcript={transcript}
-      duration={duration}
-      scenario={scenario}
-      difficulty={difficulty}
-      persona={persona}
-      onBackToHome={() => navigate("/")}
-      onNewSession={() => navigate("/scenarios")} 
-    />
-  );
-}
+// Summary wrapper moved to src/components/SummaryWrapper.tsx
 
 function App() {
   return (

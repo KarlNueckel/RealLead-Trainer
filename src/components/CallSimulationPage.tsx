@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Vapi from "@vapi-ai/web";
 import { CallConfig } from "./ConfigurationPage";
 import { UserTalkingPage } from "./callUI/UserTalkingPage";
@@ -28,6 +28,9 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const callStartTimeRef = useRef<number>(0);
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState<string>("Initializing...");
+  // Track current speaking role and conversational turns to improve attribution
+  const [currentRole, setCurrentRole] = useState<"user" | "ai" | null>(null);
+  const [turn, setTurn] = useState(0);
   const [isInitializing, setIsInitializing] = useState(true);
   const [initProgress, setInitProgress] = useState(0);
   const [shouldEndCall, setShouldEndCall] = useState(false);
@@ -58,7 +61,95 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const [callActive, setCallActive] = useState(false);
   const vapiRef = useRef<InstanceType<typeof Vapi> | null>(null);
 
+  // ===== Transcript builder helpers (role inference, turn tracking, de-dupe) =====
+  const normalizeText = (s: string) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/[\p{Cf}]/gu, "")
+      .replace(/[\p{P}\p{S}]/gu, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const recentByRoleRef = useRef<{ user: string; ai: string }>({ user: "", ai: "" });
+  const currentSpeakerRef = useRef<"user" | "ai" | null>(null);
+  const lastSpokeRef = useRef<"user" | "assistant">("user");
+  const lastEntryRef = useRef<{ text: string; role: "user" | "assistant"; time: number }>({
+    text: "",
+    role: "user",
+    time: 0,
+  });
+  const lastEventTypeRef = useRef<string | null>(null);
+
+  const appendFinal = useCallback(
+    (role: "user" | "ai", text: string, source: string) => {
+      const norm = normalizeText(text);
+      if (!norm) return;
+      const lastNorm = recentByRoleRef.current[role];
+      if (norm === lastNorm) {
+        console.log("🟡 Skip duplicate", { role, text });
+        return;
+      }
+      recentByRoleRef.current[role] = norm;
+
+      const actualElapsed = callStartTimeRef.current > 0
+        ? Math.floor((Date.now() - callStartTimeRef.current) / 1000)
+        : timeElapsed;
+
+      console.log(`💬 FINAL ${role.toUpperCase()} (turn ${turn}) [${source}]:`, text);
+      setTranscript((prev) => [
+        ...prev,
+        { speaker: role, message: text, timestamp: actualElapsed },
+      ]);
+    },
+    [turn, timeElapsed]
+  );
+
+  // Smarter appender that uses currentRole/lastSpoke and flips or drops echo lines
+  const appendFinalSmart = useCallback(
+    (event: any, source: string) => {
+      type Role = "user" | "assistant";
+      let role: Role = ((event?.role as Role) || (currentRole ? (currentRole === 'ai' ? 'assistant' : 'user') : undefined) || (lastSpokeRef.current ?? 'user')) as Role;
+      const text: string | undefined = event?.transcript || event?.input || event?.text || undefined;
+      if (!text) return;
+
+      const norm = normalizeText(text);
+      const lastNorm = normalizeText(lastEntryRef.current.text);
+      const now = Date.now();
+
+      if (norm && lastNorm && norm === lastNorm && (now - lastEntryRef.current.time) < 2000) {
+        if (lastEntryRef.current.role === 'user' && role === 'user') {
+          // likely assistant echo without proper role → flip
+          role = 'assistant';
+          console.log("🔁 Flipped role to ASSISTANT for echo line:", text);
+        } else {
+          console.log("🟡 Dropping duplicate:", text);
+          return;
+        }
+      }
+
+      lastEntryRef.current = { text, role, time: now };
+      const speaker: "user" | "ai" = role === 'assistant' ? 'ai' : 'user';
+      appendFinal(speaker, text, source);
+    },
+    [appendFinal, currentRole]
+  );
+
+  // Pretty console logs for user vs AI
+  const logUserSpeech = (text: string, source: string, t: number) => {
+    console.log(`%c🎙️ USER (turn ${t}) [${source}]`, "color:#2196F3; font-weight:bold", text);
+  };
+  const logAISpeech = (text: string, source: string, t: number) => {
+    console.log(`%c🤖 AI (turn ${t}) [${source}]`, "color:#4CAF50; font-weight:bold", text);
+  };
+
   // Initialize Vapi for Avery persona and wire events to UI state
+  useEffect(() => {
+    // Debug: log transcript on every change
+    try {
+      console.log("📜 Current transcript:", transcript);
+    } catch {}
+  }, [transcript]);
+
   useEffect(() => {
     if (config?.persona?.id !== 'avery') return;
     try {
@@ -74,7 +165,128 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
           if (active !== isRecording) setIsRecording(active);
         } catch {}
       });
+      // Capture messages from Vapi SDK into local transcript
+      client.on?.('message', (msg: any) => {
+        try {
+          console.log("🗣️ Raw message event:", msg);
+          const prevType = lastEventTypeRef.current;
+          lastEventTypeRef.current = msg?.type || null;
+          // Heuristic channel/source detection to separate mic vs AI audio
+          const isFromMic = (
+            msg?.source === 'user' ||
+            msg?.type === 'voice-input' ||
+            msg?.input_audio_buffer !== undefined ||
+            msg?.inputAudioBuffer !== undefined ||
+            msg?.channel === 'input_audio_buffer'
+          );
+          const isFromAI = (
+            msg?.source === 'assistant' ||
+            msg?.source === 'tts' ||
+            msg?.output_audio !== undefined ||
+            msg?.outputAudio !== undefined ||
+            msg?.channel === 'output_audio'
+          );
+
+          // Use speech-update events to track who is speaking and turn boundaries
+          if (msg?.type === 'speech-update') {
+            const raw = String(msg?.role || '').toLowerCase();
+            const roleMapped: 'user' | 'ai' = (raw === 'assistant' || raw === 'agent' || raw === 'ai') ? 'ai' : 'user';
+            if (msg?.status === 'started') {
+              setCurrentRole(roleMapped);
+              lastSpokeRef.current = roleMapped === 'ai' ? 'assistant' : 'user';
+              currentSpeakerRef.current = roleMapped;
+              console.log(`🎙️ ${roleMapped.toUpperCase()} started speaking (turn ${turn})`);
+            } else if (msg?.status === 'stopped') {
+              console.log(`🛑 ${roleMapped.toUpperCase()} stopped speaking`);
+              setCurrentRole(null);
+              currentSpeakerRef.current = null;
+              setTurn((prev) => prev + 1);
+            }
+            return; // handled
+          }
+
+          // Preferred: explicit transcript events coming through the message channel
+          if (msg?.type === 'transcript' && (msg?.transcriptType === 'final' || msg?.final === true)) {
+            const roleFromEvent = String(msg?.role || '').toLowerCase();
+            let speaker: 'user' | 'ai' | null = null;
+            if (isFromMic) speaker = 'user';
+            else if (isFromAI) speaker = 'ai';
+            else if (roleFromEvent === 'user') speaker = 'user';
+            else if (roleFromEvent === 'assistant' || roleFromEvent === 'agent' || roleFromEvent === 'ai') speaker = 'ai';
+            else if (currentRole) speaker = currentRole;
+            else speaker = classifySpeaker(msg) || 'ai';
+
+            const active = currentSpeakerRef.current;
+            const text = msg?.transcript || msg?.text || '';
+            if (text) {
+              if (active && speaker && speaker !== active) {
+                console.log("🚫 Ignored transcript (role mismatch)", { role: speaker, active, text });
+                return;
+              }
+              appendFinal(speaker, text, 'transcript.final');
+              if (speaker === 'user') logUserSpeech(text, 'transcript.final', turn);
+              else logAISpeech(text, 'transcript.final', turn);
+            }
+            return;
+          }
+
+          // Optional: voice-input handler just for user mic input (suppress assistant echoes)
+          if (msg?.type === 'voice-input') {
+            // Debug: show source/role for voice-input origin
+            console.log(`🎧 VOICE INPUT received from ${msg?.role || 'unknown'} (source=${msg?.source || 'n/a'})`, msg?.input || msg?.text || '');
+            // Skip AI voice-input echoes and when assistant is speaking or after model-output tokenization
+            const isUserByMeta = (msg?.role === 'user') || (msg?.source === 'microphone') || (msg?.channel === 'microphone') || (typeof msg?.turn === 'number' && (msg.turn % 2 === 1));
+            const isEchoByContext = isFromAI || currentSpeakerRef.current === 'ai' || lastSpokeRef.current === 'assistant' || prevType === 'model-output' || prevType === 'response.delta';
+            if (!isUserByMeta || isEchoByContext) {
+              console.log('🚫 Skipping AI voice-input echo');
+              return;
+            }
+            const text = msg?.input || msg?.text || '';
+            if (text) {
+              appendFinal('user', text, 'voice-input');
+              logUserSpeech(text, 'voice-input', turn);
+              return;
+            }
+          }
+
+          // Model/output token streams: do not persist to transcript (debug only)
+          if (msg?.type === 'model-output' || msg?.type === 'response.delta') {
+            return;
+          }
+
+          // Generic fallback: capture simple role/text messages if present (no pretty log)
+          const role = (msg?.role || msg?.sender || '').toLowerCase();
+          const text = msg?.text || msg?.content || msg?.message || '';
+          if (!text) return;
+          let speaker = classifySpeaker(msg);
+          if (!speaker && currentRole) speaker = currentRole;
+          appendFinal(speaker, text, 'fallback');
+        } catch {}
+      });
+      // Some SDKs emit transcript/update events; capture conservatively if present
+      client.on?.('transcript', (evt: any) => {
+        try {
+          console.log("🗣️ Raw transcript event:", evt);
+          const text = evt?.text || evt?.transcript;
+          if (!text) return;
+          const isUser = !!(evt?.is_user || evt?.from === 'user');
+          const speaker = isUser ? 'user' : 'ai';
+          console.log(`💬 ${speaker.toUpperCase()}:`, text);
+          appendFinal(speaker, text, 'transcript.channel');
+        } catch {}
+      });
       vapiRef.current = client;
+      // Auto-start Avery call to ensure transcript events flow without user clicking the toggle
+      (async () => {
+        try {
+          if (!callActive) {
+            await (client as any).start("80afc02e-adde-440d-b93c-dce41722a56f");
+            setCallActive(true);
+          }
+        } catch (err) {
+          console.error('Auto-start Avery call failed', err);
+        }
+      })();
     } catch (e) {
       console.error('Failed to init Vapi client', e);
     }
@@ -329,6 +541,7 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
       const finalTranscript = [...transcript];
       const finalDuration = timeElapsed;
       
+      console.log('📊 Final transcript length:', finalTranscript.length);
       console.log('📊 Final transcript:', finalTranscript);
       console.log('⏱️ Final duration:', finalDuration);
       
@@ -393,20 +606,21 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
             if (textContent?.text) {
               const aiMessage = textContent.text;
               console.log("🎤 AI response text:", aiMessage);
+              console.log("💬 ASSISTANT:", aiMessage);
               
               // Calculate actual elapsed time
               const actualElapsed = callStartTimeRef.current > 0 
                 ? Math.floor((Date.now() - callStartTimeRef.current) / 1000)
                 : timeElapsed;
               
-              setTranscript((prev) => [
-                ...prev,
-                {
-                  speaker: "ai",
-                  message: aiMessage,
-                  timestamp: actualElapsed,
-                },
-              ]);
+              setTranscript((prev) => {
+                const updated = [
+                  ...prev,
+                  { speaker: "ai", message: aiMessage, timestamp: actualElapsed },
+                ];
+                console.log("📝 Transcript updated:", updated);
+                return updated;
+              });
               
               // Generate audio with ElevenLabs
               await generateElevenLabsAudio(aiMessage);
@@ -439,14 +653,15 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
             ? Math.floor((Date.now() - callStartTimeRef.current) / 1000)
             : timeElapsed;
           
-          setTranscript((prev) => [
-            ...prev,
-            {
-      speaker: "user",
-              message: userMessage,
-      timestamp: actualElapsed,
-            },
-          ]);
+          console.log("💬 USER:", userMessage);
+          setTranscript((prev) => {
+            const updated = [
+              ...prev,
+              { speaker: "user", message: userMessage, timestamp: actualElapsed },
+            ];
+            console.log("📝 Transcript updated:", updated);
+            return updated;
+          });
         }
         break;
 
@@ -1220,24 +1435,21 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
     }
   };
 
-  const handleEndCall = () => {
+  const handleEndCall = async () => {
     console.log('🔴 handleEndCall called');
-    console.log('📊 Transcript entries:', transcript.length);
-    console.log('📊 Full transcript:', transcript);
+    console.log('📊 Transcript entries (pre-wait):', transcript.length);
+    console.log('📊 Full transcript (pre-wait):', transcript);
     console.log('⏱️ Time elapsed:', timeElapsed);
-    
-    // Store values before cleanup
-    const finalTranscript = [...transcript];
-    const finalDuration = timeElapsed;
-    
-    console.log('🔄 Calling onEndCall prop to navigate to summary...');
-    onEndCall(finalTranscript, finalDuration);
-    
-    // Cleanup after navigation callback (small delay to ensure navigation completes)
-    setTimeout(() => {
-      console.log('🧹 Cleaning up resources...');
-      cleanup();
-    }, 100);
+
+    // If transcript looks empty, give a brief window for any in-flight updates
+    if (transcript.length === 0) {
+      console.warn('No transcript found, waiting briefly to flush pending updates...');
+      await new Promise((r) => setTimeout(r, 600));
+      console.log('📊 Transcript entries (post-wait):', transcript.length);
+    }
+
+    // Defer navigation/cleanup to the effect that watches shouldEndCall
+    setShouldEndCall(true);
   };
 
   const formatTime = (seconds: number) => {
@@ -1415,3 +1627,41 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
     </>
   );
 }
+  // Heuristic speaker classifier for various SDK/realtime payloads
+  const classifySpeaker = (payload: any): "user" | "ai" => {
+    try {
+      const fields = [
+        payload?.role,
+        payload?.speaker,
+        payload?.sender,
+        payload?.from,
+        payload?.source,
+        payload?.author,
+        payload?.participant?.role,
+      ]
+        .filter(Boolean)
+        .map((s: string) => String(s).toLowerCase());
+
+      const has = (needle: string) => fields.some((f) => f.includes(needle));
+
+      if (payload?.is_user === true) return "user";
+      if (has("assistant") || has("agent") || has("ai") || has("bot")) return "ai";
+      if (has("user") || has("client") || has("human") || has("caller")) return "user";
+
+      // Event-type based hints
+      if (payload?.type === "conversation.item.input_audio_transcription.completed") return "user";
+      if (payload?.type === "response.output_item.done") return "ai";
+      if (payload?.type === "transcript") {
+        const role = String(payload?.role || "").toLowerCase();
+        if (role === "user") return "user";
+        if (role === "assistant" || role === "agent" || role === "ai") return "ai";
+      }
+
+      // Fallback: prefer 'ai' only when clearly marked; otherwise assume user to reduce false AI attribution
+      return "user";
+    } catch {
+      return "user";
+    }
+  };
+
+
