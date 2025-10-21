@@ -8,11 +8,13 @@ interface UserTalkingPageProps {
   scriptText: string;
   onEndCall?: () => void;
   callDuration?: string;
+  thinking?: boolean; // hide script and mic when model is thinking
+  isRecording?: boolean; // realtor talking indicator
 }
 
-export function UserTalkingPage({ contactName, profileImage, scriptText, onEndCall, callDuration }: UserTalkingPageProps) {
+export function UserTalkingPage({ contactName, profileImage, scriptText, onEndCall, callDuration, thinking, isRecording }: UserTalkingPageProps) {
   return (
-    <div className="size-full relative overflow-hidden">
+    <div className="relative overflow-hidden min-h-screen">
       {/* Background with gradient and glow */}
       <div className="absolute inset-0 bg-gradient-to-br from-[#002B55] via-[#003d6b] to-[#002B55]">
         {/* Animated blue glow streak */}
@@ -43,48 +45,78 @@ export function UserTalkingPage({ contactName, profileImage, scriptText, onEndCa
         />
       </div>
 
-      {/* Main Content Area - constrained to avoid phone overlap */}
-      <div className="relative z-10 size-full flex flex-col items-center justify-center px-8 pr-[520px]">
+      {/* Main Content Area - reserve space for header and phone */}
+      <div className="relative z-10 min-h-screen flex flex-col items-center px-6 lg:px-8 pr-4 lg:pr-[520px] pt-8 lg:pt-12">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="flex flex-col items-center justify-between size-full py-16 max-w-5xl w-full"
+          className="flex flex-col items-center justify-between w-full max-w-5xl py-10 lg:py-16"
         >
           {/* Spacer for vertical centering */}
           <div className="flex-1" />
           
-          {/* Script Text */}
-          <motion.div
-            className="w-full text-center px-12"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2, duration: 0.6 }}
-          >
-            <p
-              className="text-white text-4xl md:text-5xl lg:text-6xl"
-              style={{
-                fontFamily: "Inter, system-ui, sans-serif",
-                textShadow: "0 4px 20px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 174, 239, 0.3)",
-                lineHeight: 1.4,
-              }}
+          {/* Script Text or Thinking Hint */}
+          {thinking ? (
+            <motion.div
+              className="w-full text-center px-6 lg:px-12"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15, duration: 0.4 }}
             >
-              {scriptText}
-            </p>
-          </motion.div>
+              <div className="inline-flex items-center gap-3 text-white/85">
+                <span className="text-2xl md:text-3xl tracking-wide">Thinking</span>
+                <motion.span
+                  className="inline-block w-2 h-2 md:w-3 md:h-3 bg-white/70 rounded-full"
+                  animate={{ opacity: [0.2, 1, 0.2] }}
+                  transition={{ duration: 0.9, repeat: Infinity, ease: "easeInOut" }}
+                />
+                <motion.span
+                  className="inline-block w-2 h-2 md:w-3 md:h-3 bg-white/70 rounded-full"
+                  animate={{ opacity: [0.2, 1, 0.2] }}
+                  transition={{ duration: 0.9, repeat: Infinity, ease: "easeInOut", delay: 0.15 }}
+                />
+                <motion.span
+                  className="inline-block w-2 h-2 md:w-3 md:h-3 bg-white/70 rounded-full"
+                  animate={{ opacity: [0.2, 1, 0.2] }}
+                  transition={{ duration: 0.9, repeat: Infinity, ease: "easeInOut", delay: 0.3 }}
+                />
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              className="w-full text-center px-6 lg:px-12"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2, duration: 0.6 }}
+            >
+              <p
+                className="text-white text-3xl md:text-4xl lg:text-5xl xl:text-6xl"
+                style={{
+                  fontFamily: "Inter, system-ui, sans-serif",
+                  textShadow: "0 4px 20px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 174, 239, 0.3)",
+                  lineHeight: 1.4,
+                }}
+              >
+                {scriptText}
+              </p>
+            </motion.div>
+          )}
 
           {/* Spacer for vertical centering */}
           <div className="flex-1" />
 
-          {/* Mic Indicator at bottom */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4, duration: 0.6 }}
-            className="mb-8"
-          >
-            <MicIndicator />
-          </motion.div>
+          {/* Mic Indicator at bottom (hidden while thinking) */}
+          {!thinking && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4, duration: 0.6 }}
+              className="mb-8"
+            >
+              <MicIndicator active={!!isRecording} />
+            </motion.div>
+          )}
         </motion.div>
       </div>
 
@@ -97,7 +129,7 @@ export function UserTalkingPage({ contactName, profileImage, scriptText, onEndCa
       />
 
       {/* App Title (top left) */}
-      <div className="absolute top-8 left-8 z-20">
+      <div className="absolute top-6 left-6 lg:top-8 lg:left-8 z-20">
         <h1 className="text-white/90 text-2xl" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
           RealLead Trainer
         </h1>

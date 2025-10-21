@@ -9,7 +9,7 @@ interface PhoneOverlayProps {
 
 export function PhoneOverlay({ contactName, profileImage, onEndCall, callDuration = "03:24" }: PhoneOverlayProps) {
   return (
-    <div className="absolute top-1/2 -translate-y-1/2 right-12 w-96 h-[820px] bg-gradient-to-b from-gray-900/95 to-black/95 rounded-[3.5rem] shadow-[0_20px_80px_rgba(0,0,0,0.8)] backdrop-blur-md border-[6px] border-gray-800/80 z-50 pointer-events-auto">
+    <div className="absolute top-1/2 -translate-y-1/2 right-4 md:right-8 lg:right-12 w-72 md:w-80 lg:w-96 h-[620px] md:h-[700px] lg:h-[820px] max-h-[calc(100vh-64px)] overflow-hidden bg-gradient-to-b from-gray-900/95 to-black/95 rounded-[3.5rem] shadow-[0_20px_80px_rgba(0,0,0,0.8)] backdrop-blur-md border-[6px] border-gray-800/80 z-50 pointer-events-auto">
       {/* Dynamic Island */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 w-32 h-8 bg-black rounded-full z-10"></div>
       
@@ -99,7 +99,7 @@ export function PhoneOverlay({ contactName, profileImage, onEndCall, callDuratio
       </div>
 
       {/* End Call Button */}
-      <div className="absolute bottom-16 left-0 right-0 flex justify-center z-50">
+      <div className="absolute bottom-12 md:bottom-14 lg:bottom-16 left-0 right-0 flex justify-center z-50">
         <button 
           onClick={(e) => {
             e.preventDefault();
@@ -107,10 +107,10 @@ export function PhoneOverlay({ contactName, profileImage, onEndCall, callDuratio
             console.log("🔴 End call button clicked!");
             onEndCall?.();
           }}
-          className="w-20 h-20 rounded-full bg-red-500/90 hover:bg-red-600/90 active:scale-95 transition-all flex items-center justify-center shadow-2xl cursor-pointer relative z-50"
+          className="w-16 h-16 md:w-18 md:h-18 lg:w-20 lg:h-20 rounded-full bg-red-500/90 hover:bg-red-600/90 active:scale-95 transition-all flex items-center justify-center shadow-2xl cursor-pointer relative z-50"
           type="button"
         >
-          <PhoneOff className="w-9 h-9 text-white pointer-events-none" strokeWidth={2.5} />
+          <PhoneOff className="w-7 h-7 md:w-8 md:h-8 lg:w-9 lg:h-9 text-white pointer-events-none" strokeWidth={2.5} />
         </button>
       </div>
 
@@ -119,3 +119,4 @@ export function PhoneOverlay({ contactName, profileImage, onEndCall, callDuratio
     </div>
   );
 }
+

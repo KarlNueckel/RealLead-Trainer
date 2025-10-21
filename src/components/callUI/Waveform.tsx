@@ -1,39 +1,39 @@
 import { motion } from "framer-motion";
 
 export function Waveform() {
-  // Generate 80 bars for the waveform
-  const bars = Array.from({ length: 80 }, (_, i) => i);
+  // Generate flexible number of bars that will stretch across full width
+  const bars = Array.from({ length: 140 }, (_, i) => i);
 
   return (
-    <div className="flex items-center justify-center gap-1 h-32">
+    <div className="flex items-center justify-center w-full h-56">
       {bars.map((i) => {
         // Create varied animation delays and heights for natural wave effect
-        const delay = i * 0.02;
-        const baseHeight = Math.sin(i * 0.15) * 30 + 40;
+        const delay = i * 0.012;
+        const baseHeight = Math.sin(i * 0.12) * 60 + 80; // bigger amplitude and baseline
         
         return (
           <motion.div
             key={i}
-            className="w-1 bg-gradient-to-t from-[#00AEEF] via-[#004C80] to-[#00AEEF] rounded-full"
-            initial={{ height: 4 }}
+            className="flex-1 mx-[1px] bg-gradient-to-t from-[#00AEEF] via-[#004C80] to-[#00AEEF] rounded-full"
+            initial={{ height: 8 }}
             animate={{
               height: [
-                baseHeight * 0.3,
+                baseHeight * 0.4,
                 baseHeight,
-                baseHeight * 1.2,
-                baseHeight * 0.5,
-                baseHeight * 0.3,
+                baseHeight * 1.3,
+                baseHeight * 0.6,
+                baseHeight * 0.4,
               ],
-              opacity: [0.4, 1, 1, 0.7, 0.4],
+              opacity: [0.35, 1, 1, 0.65, 0.35],
             }}
             transition={{
-              duration: 1.5,
+              duration: 1.3,
               repeat: Infinity,
               delay: delay,
               ease: "easeInOut",
             }}
             style={{
-              filter: "drop-shadow(0 0 8px rgba(0, 174, 239, 0.6))",
+              filter: "drop-shadow(0 0 12px rgba(0, 174, 239, 0.55))",
             }}
           />
         );

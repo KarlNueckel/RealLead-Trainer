@@ -4,6 +4,8 @@ import CallScenarios from "./pages/CallScenarios";
 import ChooseAILead from "./pages/ChooseAILead";
 import PickScript from "./pages/PickScript";
 import { CallSimulationPage } from "./components/CallSimulationPage";
+import AveryPage from "./pages/AveryPage";
+import TestVapi from "./TestVapi";
 import { SessionSummaryPage } from "./components/SessionSummaryPage";
 
 function ConversationWrapper() {
@@ -13,7 +15,7 @@ function ConversationWrapper() {
 
   if (!config) {
     // Redirect back if no config
-    navigate("/call-scenarios");
+    navigate("/scenarios");
     return <div>Redirecting...</div>;
   }
 
@@ -71,7 +73,7 @@ function SummaryWrapper() {
       difficulty={difficulty}
       persona={persona}
       onBackToHome={() => navigate("/")}
-      onNewSession={() => navigate("/call-scenarios")}
+      onNewSession={() => navigate("/scenarios")} 
     />
   );
 }
@@ -81,11 +83,13 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/call-scenarios" element={<CallScenarios />} />
+        <Route path="/scenarios" element={<CallScenarios />} />
         <Route path="/choose-ai-lead" element={<ChooseAILead />} />
         <Route path="/pick-script" element={<PickScript />} />
         <Route path="/conversation" element={<ConversationWrapper />} />
         <Route path="/summary" element={<SummaryWrapper />} />
+        <Route path="/avery" element={<AveryPage />} />
+        <Route path="/vapi-debug" element={<TestVapi />} />
       </Routes>
     </BrowserRouter>
   );

@@ -1,7 +1,8 @@
-import { ProgressTracker } from "../components/ProgressTracker";
+import { ProgressStepper } from "../components/ProgressStepper";
 import { useNavigate, useLocation } from "react-router-dom";
 import { CallConfig } from "../components/ConfigurationPage";
 import { ArrowLeft } from "lucide-react";
+import { referralScriptContent } from "../scenarios/referralScript";
 
 export default function PickScript() {
   const navigate = useNavigate();
@@ -16,7 +17,7 @@ export default function PickScript() {
     }
 
     const config: CallConfig = {
-      scenario: scenario || "Seller Lead - Initial Call",
+      scenario: scenario || "Seller Lead - Refferal",
       mood: "Neutral",
       difficulty: persona.difficulty,
       persona: persona,
@@ -33,32 +34,7 @@ export default function PickScript() {
 
   const getScriptContent = (scriptName: string) => {
     const scripts: Record<string, string> = {
-      "Cold Call - Seller Interest": `Introduction:
-"Hi, this is [Your Name] with [Your Real Estate Company]. How are you doing today?"
-
-Purpose:
-"I'm reaching out because I've been working in your neighborhood and noticed your property at [Address]. We've had several buyers specifically looking for homes in your area."
-
-Value Proposition:
-"In fact, homes on your street have been selling 15% above asking price in the last 3 months. I wanted to see if you'd be open to learning what your home might be worth in today's market?"`,
-      
-      "FSBO - Objection Handling": `Acknowledgment:
-"I understand you're selling your home on your own. That shows great initiative!"
-
-Value Question:
-"I'm curious - how has the process been going so far? Have you had many showings?"
-
-Positioning:
-"Many homeowners I work with initially tried FSBO, and I help them navigate the challenges they encountered. Would you be open to a quick conversation about what's working and what might not be?"`,
-      
-      "Expired Listing": `Empathy Opening:
-"Hi [Name], I noticed your listing on [Address] recently expired. I know that can be frustrating."
-
-Direct Question:
-"I'm curious - what do you think prevented it from selling?"
-
-Solution Positioning:
-"I've helped several homeowners in similar situations sell their homes successfully. Would you be open to a brief conversation about a fresh approach?"`,
+      "Seller Lead - Referral: Calling a Referral (Clash #1)": referralScriptContent,
     };
 
     return scripts[scriptName] || "Practice script content here.";
@@ -75,10 +51,17 @@ Solution Positioning:
           Back to AI Lead Selection
         </button>
       </div>
-      <ProgressTracker currentStep="Script" />
+      <ProgressStepper
+        steps={[
+          { label: "Scenarios", completed: true, active: false },
+          { label: "AI Lead", completed: true, active: false },
+          { label: "Script", completed: false, active: true },
+          { label: "Conversation", completed: false, active: false },
+        ]}
+      />
       <h2 className="text-3xl font-semibold mb-8">Select a Training Script</h2>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {["Cold Call - Seller Interest", "FSBO - Objection Handling", "Expired Listing"].map((script) => (
+        {["Seller Lead - Referral: Calling a Referral (Clash #1)"].map((script) => (
           <div
             key={script}
             onClick={() => handleScriptSelect(script)}
@@ -86,7 +69,7 @@ Solution Positioning:
           >
             <h3 className="text-lg font-semibold mb-2">{script}</h3>
             <p className="text-gray-600 text-sm">
-              Practice a realistic {script.toLowerCase()} scenario with adaptive AI responses.
+              Seller Lead - Referral pre-qualification & pre-listing training (6 slides).
             </p>
           </div>
         ))}

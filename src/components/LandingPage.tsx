@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 
 export function LandingPage() {
   const navigate = useNavigate();
-  const onStart = () => navigate("/call-scenarios");
+  const onStart = () => navigate("/scenarios");
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#F9FAFB] via-[#F3F6FF] to-[#EFF6FF]">
       {/* Hero Section */}

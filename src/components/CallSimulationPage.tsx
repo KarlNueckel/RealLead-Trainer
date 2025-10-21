@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import Vapi from "@vapi-ai/web";
 import { CallConfig } from "./ConfigurationPage";
 import { UserTalkingPage } from "./callUI/UserTalkingPage";
 import { AITalkingPage } from "./callUI/AITalkingPage";
@@ -52,6 +53,53 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const playbackSafetyTimeoutRef = useRef<number | null>(null); // Safety fallback after API done
   const currentAudioRef = useRef<HTMLAudioElement | null>(null); // Track current playing audio
   const currentAudioUrlRef = useRef<string | null>(null); // Track blob URL for cleanup
+
+  // Avery via Vapi SDK (no widget)
+  const [callActive, setCallActive] = useState(false);
+  const vapiRef = useRef<InstanceType<typeof Vapi> | null>(null);
+
+  // Initialize Vapi for Avery persona and wire events to UI state
+  useEffect(() => {
+    if (config?.persona?.id !== 'avery') return;
+    try {
+      const client = new (Vapi as any)("079cf384-f6b0-4c56-a7b5-6843b494e4fa");
+      client.on?.('call-start', () => setIsConnected(true));
+      client.on?.('call-end', () => { setIsConnected(false); setIsAISpeaking(false); setCallActive(false); });
+      client.on?.('speech-start', () => setIsAISpeaking(true));
+      client.on?.('speech-end', () => setIsAISpeaking(false));
+      // Optional: drive local mic indicator if present in this build
+      client.on?.('volume-level', (volume: number) => {
+        try {
+          const active = Number(volume) > 0.06;
+          if (active !== isRecording) setIsRecording(active);
+        } catch {}
+      });
+      vapiRef.current = client;
+    } catch (e) {
+      console.error('Failed to init Vapi client', e);
+    }
+    return () => {
+      try { vapiRef.current?.removeAllListeners?.(); vapiRef.current?.stop?.(); } catch {}
+      vapiRef.current = null;
+    };
+  }, [config?.persona?.id]);
+
+  const handleToggleVapiCall = async () => {
+    if (config?.persona?.id !== 'avery') return;
+    const client = vapiRef.current as any;
+    if (!client) return;
+    try {
+      if (!callActive) {
+        await client.start("80afc02e-adde-440d-b93c-dce41722a56f");
+        setCallActive(true);
+      } else {
+        await client.stop();
+        setCallActive(false);
+      }
+    } catch (e) {
+      console.error('Vapi start/stop failed', e);
+    }
+  };
 
   // Parse script into KaraokeCall chunks on mount - ONLY USER LINES
   useEffect(() => {
@@ -153,8 +201,9 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
     return `${scenarioPrompts[config.scenario as keyof typeof scenarioPrompts]} ${moodModifiers[config.mood as keyof typeof moodModifiers]} ${difficultyModifiers[config.difficulty as keyof typeof difficultyModifiers]} Keep responses conversational and realistic. Respond naturally as if in a real phone conversation. Stay in character throughout the call.`;
   };
 
-  // Initialize WebSocket connection
+  // Initialize WebSocket connection (skip for Avery)
   useEffect(() => {
+    if (config?.persona?.id === 'avery') { setIsInitializing(false); return; }
     let mounted = true;
 
     const initializeCall = async () => {
@@ -1241,8 +1290,8 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
     
     return (
       <>
-        {isInitializing && <LoadingOverlay />}
-        {!isInitializing && (
+        {(isInitializing && config.persona?.id !== 'avery') && <LoadingOverlay />}
+        {(config.persona?.id === 'avery' || !isInitializing) && (
           isAISpeaking ? (
             <AITalkingPage
               contactName={contactName}
@@ -1260,6 +1309,17 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
             />
           )
         )}
+        {/* Avery: Start/End Call toggle (voice-only via SDK) */}
+        {config.persona?.id === 'avery' && (
+          <button
+            onClick={handleToggleVapiCall}
+            className={`fixed bottom-6 right-6 px-6 py-3 text-lg font-semibold rounded-full shadow-lg transition ${
+              callActive ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'
+            } text-white z-50`}
+          >
+            {callActive ? 'End Call 🔴' : 'Start Call 🎤'}
+          </button>
+        )}
       </>
     );
   }
@@ -1267,7 +1327,7 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
   // Fallback: regular transcript view
   return (
     <>
-      {isInitializing && <LoadingOverlay />}
+      {(isInitializing && config.persona?.id !== 'avery') && <LoadingOverlay />}
       <div className="flex flex-col h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex justify-between items-center">

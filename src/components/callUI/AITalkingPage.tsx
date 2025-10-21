@@ -11,7 +11,7 @@ interface AITalkingPageProps {
 
 export function AITalkingPage({ contactName, profileImage, onEndCall, callDuration }: AITalkingPageProps) {
   return (
-    <div className="size-full relative overflow-hidden">
+    <div className="relative overflow-hidden min-h-screen">
       {/* Background with gradient and glow */}
       <div className="absolute inset-0 bg-gradient-to-br from-[#002B55] via-[#003d6b] to-[#002B55]">
         {/* Animated blue glow streak */}
@@ -42,16 +42,16 @@ export function AITalkingPage({ contactName, profileImage, onEndCall, callDurati
         />
       </div>
 
-      {/* Main Content Area - constrained to avoid phone overlap */}
-      <div className="relative z-10 size-full flex flex-col items-center justify-center px-8 pr-[520px]">
+      {/* Main Content Area - reserve space for header and phone */}
+      <div className="relative z-10 min-h-screen flex flex-col items-center px-6 lg:px-8 pr-4 lg:pr-[520px]">
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
+          initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5 }}
-          className="w-full max-w-5xl"
+          className="w-full max-w-7xl"
         >
-          {/* Waveform */}
-          <div className="relative">
+          {/* Waveform Header (centered vertically within its band) */}
+          <div className="relative w-full min-h-[360px] mt-40 md:mt-48 lg:mt-56">
             {/* Glow effect under waveform */}
             <div
               className="absolute inset-0 blur-xl"
@@ -60,7 +60,12 @@ export function AITalkingPage({ contactName, profileImage, onEndCall, callDurati
                   "radial-gradient(ellipse 80% 50% at 50% 50%, rgba(0, 174, 239, 0.4) 0%, transparent 70%)",
               }}
             />
-            <Waveform />
+            {/* Center the waveform at the vertical midpoint of this section */}
+            <div className="absolute inset-0 flex justify-center">
+              <div className="absolute top-1/2 -translate-y-1/2 w-full flex justify-center">
+                <Waveform />
+              </div>
+            </div>
           </div>
         </motion.div>
       </div>
@@ -74,7 +79,7 @@ export function AITalkingPage({ contactName, profileImage, onEndCall, callDurati
       />
 
       {/* App Title (top left) */}
-      <div className="absolute top-8 left-8 z-20">
+      <div className="absolute top-6 left-6 lg:top-8 lg:left-8 z-20">
         <h1 className="text-white/90 text-2xl" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
           RealLead Trainer
         </h1>

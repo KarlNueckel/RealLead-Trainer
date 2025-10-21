@@ -3,10 +3,14 @@ import { personas, type Persona } from "../config/personas";
 
 interface PersonaSelectionProps {
   onSelect: (persona: Persona | null) => void;
+  allowedIds?: string[];
 }
 
-export function PersonaSelection({ onSelect }: PersonaSelectionProps) {
+export function PersonaSelection({ onSelect, allowedIds }: PersonaSelectionProps) {
   const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
+  const list = Array.isArray(allowedIds) && allowedIds.length > 0
+    ? personas.filter(p => allowedIds.includes(p.id))
+    : personas;
 
   const handlePersonaSelect = (p: Persona) => {
     setSelectedPersona(p);
@@ -17,7 +21,7 @@ export function PersonaSelection({ onSelect }: PersonaSelectionProps) {
     <div className="w-full max-w-5xl px-6">
       <h2 className="text-3xl font-semibold mb-8 text-center text-gray-900">Choose Your AI Lead</h2>
       <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-        {personas.map((persona) => {
+        {list.map((persona) => {
           const difficultyStars = {
             Easy: "⭐",
             Medium: "⭐⭐⭐",
