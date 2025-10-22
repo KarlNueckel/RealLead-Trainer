@@ -1,21 +1,15 @@
 export const referralScriptContent = `Hi [Name], this is [Agent] with [Company].
-I’m a real estate agent affiliated with (brokerage name).
 (Insert name of person that gave you referral) asked me to speak with you about your upcoming real estate needs.
 What can I help you with?
 
 $
 
-(If yes, make an appointment to meet.)
-Great, I’d love to help you with that.
+I’d love to help you with that.
 I can see you today at _______ or tomorrow at _______.
 Which is better for you?
 
 $
 
-(If no, continue with script.)
-Who do you know that is thinking about moving?
-
-$
 
 (If yes) Great! Thanks! Anyone else?
 Anyone who is changing jobs, graduating, getting married, etc.?

@@ -13,6 +13,7 @@ interface UserTalkingPageProps {
 }
 
 export function UserTalkingPage({ contactName, profileImage, scriptText, onEndCall, callDuration, thinking, isRecording }: UserTalkingPageProps) {
+  const isNoScript = (scriptText?.trim().toLowerCase() === "no script");
   return (
     <div className="relative overflow-hidden min-h-screen">
       {/* Background with gradient and glow */}
@@ -90,16 +91,18 @@ export function UserTalkingPage({ contactName, profileImage, scriptText, onEndCa
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.2, duration: 0.6 }}
             >
-              <p
-                className="text-white text-3xl md:text-4xl lg:text-5xl xl:text-6xl"
-                style={{
-                  fontFamily: "Inter, system-ui, sans-serif",
-                  textShadow: "0 4px 20px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 174, 239, 0.3)",
-                  lineHeight: 1.4,
-                }}
-              >
-                {scriptText}
-              </p>
+              {isNoScript ? (<> </>) : (
+                <p
+                  className="text-white text-3xl md:text-4xl lg:text-5xl xl:text-6xl"
+                  style={{
+                    fontFamily: "Inter, system-ui, sans-serif",
+                    textShadow: "0 4px 20px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 174, 239, 0.3)",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {scriptText}
+                </p>
+              )}
             </motion.div>
           )}
 
@@ -107,10 +110,11 @@ export function UserTalkingPage({ contactName, profileImage, scriptText, onEndCa
           <div className="flex-1" />
         </motion.div>
       </div>
-
-      {/* Mic Indicator (fixed near bottom, centered) */}
+      {/* Centered No Script heading */}
+      {(isNoScript && !thinking) && (
+        <h1 className="absolute top-[40%] left-1/2 -translate-x-1/2 text-white text-5xl md:text-6xl z-20">No Script</h1>
+      )}      {/* Mic Indicator (fixed near bottom, centered) */}
       {!thinking && (<MicIndicator />)}
-
       {/* Phone Overlay */}
       <PhoneOverlay 
         contactName={contactName} 
@@ -129,6 +133,37 @@ export function UserTalkingPage({ contactName, profileImage, scriptText, onEndCa
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
