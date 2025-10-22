@@ -3,6 +3,7 @@ import Vapi from "@vapi-ai/web";
 import { CallConfig } from "./ConfigurationPage";
 import { UserTalkingPage } from "./callUI/UserTalkingPage";
 import { AITalkingPage } from "./callUI/AITalkingPage";
+import { referralScriptContent } from "../scenarios/referralScript";
 
 export type ScriptChunk = {
   speaker: "user" | "ai";
@@ -319,6 +320,24 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
     console.log("🔍 config.script:", config.script);
     console.log("🔍 config.script?.content:", config.script?.content);
     
+    // Special handling: "No Script" should display same UI with placeholder pages
+    if (config.script?.name === "No Script") {
+      const chunks: ScriptChunk[] = [];
+      // Derive the number of slides from the referral script using the same sectioning
+      const sections = referralScriptContent
+        .split(/\n\n+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      for (const _ of sections) {
+        chunks.push({ speaker: "user", text: "No Script" });
+      }
+
+      setScriptChunks(chunks);
+      console.log("📄 Generated 'No Script' placeholder chunks:", chunks.length);
+      return;
+    }
+
     if (config.script?.content) {
       const chunks: ScriptChunk[] = [];
       let currentLabel = "";

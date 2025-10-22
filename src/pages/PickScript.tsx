@@ -33,6 +33,7 @@ export default function PickScript() {
   };
 
   const getScriptContent = (scriptName: string) => {
+    if (scriptName === "No Script") return "";
     const scripts: Record<string, string> = {
       "Seller Lead - Referral: Calling a Referral (Clash #1)": referralScriptContent,
     };
@@ -61,7 +62,7 @@ export default function PickScript() {
       />
       <h2 className="text-3xl font-semibold mb-8">Select a Training Script</h2>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {["Seller Lead - Referral: Calling a Referral (Clash #1)"].map((script) => (
+        {["No Script", "Seller Lead - Referral: Calling a Referral (Clash #1)"].map((script) => (
           <div
             key={script}
             onClick={() => handleScriptSelect(script)}
@@ -69,7 +70,9 @@ export default function PickScript() {
           >
             <h3 className="text-lg font-semibold mb-2">{script}</h3>
             <p className="text-gray-600 text-sm">
-              Seller Lead - Referral pre-qualification & pre-listing training (6 slides).
+              {script === "No Script"
+                ? "Free-form practice without a guided script."
+                : "Seller Lead - Referral pre-qualification & pre-listing training (6 slides)."}
             </p>
           </div>
         ))}

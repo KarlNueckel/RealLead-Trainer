@@ -202,3 +202,61 @@ html, body, #root {
   margin: 0;
   padding: 0;
 }
+
+/* Mic indicator pulse animation and positioning */
+@keyframes pulse {
+  0% { transform: translateX(-50%) scale(1); opacity: 0.8; }
+  50% { transform: translateX(-50%) scale(1.4); opacity: 1; }
+  100% { transform: translateX(-50%) scale(1); opacity: 0.8; }
+}
+
+.mic-indicator {
+  position: absolute;
+  left: 50%;
+  bottom: 120px; /* align roughly with hang-up button */
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #00aaff 40%, #0077cc 100%);
+  animation: pulse 2s infinite ease-in-out;
+  box-shadow: 0 0 25px rgba(0, 170, 255, 0.7);
+}
+
+/* Mic pulse ripple animation */
+@keyframes mic-ripple {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+  100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+}
+
+.mic-pulse {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 120px; /* align near hang-up button */
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #00aaff 40%, #0077cc 100%);
+  box-shadow: 0 0 25px rgba(0, 170, 255, 0.7);
+  isolation: isolate;
+}
+
+.mic-pulse::before,
+.mic-pulse::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 0.6;
+  border: 2px solid rgba(0, 170, 255, 0.6);
+  box-shadow: 0 0 18px rgba(0, 170, 255, 0.4), inset 0 0 10px rgba(0, 170, 255, 0.25);
+  animation: mic-ripple 2.2s ease-out infinite;
+}
+
+.mic-pulse::after {
+  animation-delay: 1.1s; /* stagger */
+}

@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import { PhoneOverlay } from "./PhoneOverlay";
 import { MicIndicator } from "./MicIndicator";
 
@@ -105,20 +105,11 @@ export function UserTalkingPage({ contactName, profileImage, scriptText, onEndCa
 
           {/* Spacer for vertical centering */}
           <div className="flex-1" />
-
-          {/* Mic Indicator at bottom (hidden while thinking) */}
-          {!thinking && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4, duration: 0.6 }}
-              className="mb-8"
-            >
-              <MicIndicator active={!!isRecording} />
-            </motion.div>
-          )}
         </motion.div>
       </div>
+
+      {/* Mic Indicator (fixed near bottom, centered) */}
+      {!thinking && (<MicIndicator />)}
 
       {/* Phone Overlay */}
       <PhoneOverlay 
@@ -138,3 +129,7 @@ export function UserTalkingPage({ contactName, profileImage, scriptText, onEndCa
     </div>
   );
 }
+
+
+
+
