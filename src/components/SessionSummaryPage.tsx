@@ -1,7 +1,8 @@
 import { TranscriptEntry } from "./CallSimulationPage";
 import { GradeDisplay } from "./GradeDisplay";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Persona } from "../config/personas";
+import { toast } from "sonner";
 
 interface SessionSummaryPageProps {
   transcript: TranscriptEntry[];
@@ -39,6 +40,72 @@ export function SessionSummaryPage({
 }: SessionSummaryPageProps) {
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(true);
+  const [nextStepUnlocked, setNextStepUnlocked] = useState<string | null>(null);
+  const [stepsState, setStepsState] = useState<Array<{ name: string; status: 'locked' | 'unlocked' | 'completed'; order: number }>>([]);
+
+  // Map of path -> ordered steps for scalability
+  const stepFlow = useMemo(() => ({
+    "Seller Lead - Referral": ["Initial Call", "Listing Consultation", "Follow-Up"],
+  }), []);
+
+  // Derive training path and current step from scenario
+  const trainingPath = useMemo(() => {
+    const s = String(scenario || "").toLowerCase();
+    if (s.includes("seller lead - referral")) return "Seller Lead - Referral";
+    return null;
+  }, [scenario]);
+  const currentTrainingStep = useMemo(() => {
+    return trainingPath ? stepFlow[trainingPath]?.[0] || null : null;
+  }, [trainingPath, stepFlow]);
+
+  const handleProgression = async (score: number) => {
+    const passThreshold = 80;
+    if (!trainingPath || !currentTrainingStep) return;
+    try {
+      const resp = await fetch('/api/training/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: trainingPath, currentStep: currentTrainingStep, score, passThreshold })
+      });
+      if (!resp.ok) throw new Error('progress update failed');
+      const data = await resp.json();
+      if (Array.isArray(data?.steps)) {
+        const mapped = data.steps.map((s: any) => ({ name: s.name, status: s.status, order: s.order }));
+        setStepsState(mapped);
+      }
+      if (data.status === 'passed') {
+        setNextStepUnlocked(data.nextStep || null);
+        toast.success(`✅ Congrats! You’ve passed the ${currentTrainingStep}. ${data.nextStep ? `The next step, ${data.nextStep}, is now unlocked.` : ''}`);
+      } else {
+        toast.error('❌ You didn’t pass this step yet. Review your responses and try again.');
+      }
+    } catch {
+      if (score >= passThreshold) {
+        const next = trainingPath ? stepFlow[trainingPath]?.[1] : null;
+        setNextStepUnlocked(next || null);
+        toast.success(`✅ Congrats! You’ve passed the ${currentTrainingStep}. ${next ? `The next step, ${next}, is now unlocked.` : ''}`);
+      } else {
+        toast.error('❌ You didn’t pass this step yet. Review your responses and try again.');
+      }
+    }
+  };
+
+  // Fetch current steps on mount for UI state
+  useEffect(() => {
+    const fetchSteps = async () => {
+      if (!trainingPath) return;
+      try {
+        const r = await fetch(`/api/training/steps?path=${encodeURIComponent(trainingPath)}`);
+        if (!r.ok) return;
+        const data = await r.json();
+        if (Array.isArray(data?.steps)) {
+          const mapped = data.steps.map((s: any) => ({ name: s.name, status: s.status, order: s.order }));
+          setStepsState(mapped);
+        }
+      } catch {}
+    };
+    fetchSteps();
+  }, [trainingPath]);
 
   useEffect(() => {
     // Call the scoring API
@@ -82,17 +149,22 @@ export function SessionSummaryPage({
         if (response.ok) {
           const data = await response.json();
           setEvaluation(data.evaluation);
+          if (typeof data?.evaluation?.score === 'number') {
+            handleProgression(data.evaluation.score);
+          }
         } else {
           console.error('Failed to evaluate call');
           // Provide a default score if API fails
-          setEvaluation({
+          const fallback = {
             score: 70,
             grade: "C",
             strengths: ["Completed the call with " + userMessages.length + " message(s)"],
             improvements: ["Evaluation service temporarily unavailable - please try again"],
             breakdown: { opening: 14, value: 14, objections: 14, questions: 14, closing: 14 },
             summary: "Call completed. Unable to provide detailed evaluation at this time."
-          });
+          } as Evaluation;
+          setEvaluation(fallback);
+          handleProgression(fallback.score);
         }
       } catch (error) {
         console.error('Error evaluating call:', error);
@@ -114,14 +186,16 @@ export function SessionSummaryPage({
             summary: "You did not speak during this call. Please check your microphone settings."
           });
         } else {
-          setEvaluation({
+          const fallback = {
             score: 70,
             grade: "C",
             strengths: ["Completed the call with " + userMessages.length + " message(s)"],
             improvements: ["Evaluation service unavailable - score based on participation only"],
             breakdown: { opening: 14, value: 14, objections: 14, questions: 14, closing: 14 },
             summary: "Call completed successfully."
-          });
+          } as Evaluation;
+          setEvaluation(fallback);
+          handleProgression(fallback.score);
         }
       } finally {
         setIsEvaluating(false);
@@ -163,6 +237,61 @@ export function SessionSummaryPage({
                 grade={evaluation.grade}
                 breakdown={evaluation.breakdown}
               />
+
+              {/* Next Step CTA if unlocked */}
+              {nextStepUnlocked && (
+                <div className="mt-6 mb-8 rounded-xl border border-blue-200 bg-blue-50 p-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-blue-900 font-semibold mb-1">Next Step Unlocked</div>
+                      <div className="text-blue-800">{nextStepUnlocked}</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        // Navigate to persona selection; keep path context in query
+                        const url = new URL(window.location.origin + '/choose-ai-lead');
+                        if (typeof scenario === 'string') url.searchParams.set('path', scenario);
+                        url.searchParams.set('nextStep', nextStepUnlocked || '');
+                        window.location.href = url.toString();
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                    >
+                      Start {nextStepUnlocked}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {trainingPath && stepsState.length > 0 && (
+                <div className="mt-2 mb-6">
+                  <div className="text-sm text-gray-700 mb-2 font-medium">{trainingPath} Progress</div>
+                  <div className="flex gap-3 flex-wrap">
+                    {stepsState.sort((a,b)=>a.order-b.order).map((s) => {
+                      const clickable = (s.status === 'unlocked' || s.status === 'completed');
+                      return (
+                        <button
+                          key={s.name}
+                          disabled={!clickable}
+                          onClick={() => {
+                            if (!clickable) return;
+                            const url = new URL(window.location.origin + '/choose-ai-lead');
+                            url.searchParams.set('path', trainingPath);
+                            url.searchParams.set('step', s.name);
+                            window.location.href = url.toString();
+                          }}
+                          className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                            s.status === 'completed' ? 'bg-green-100 text-green-800 border-green-200' :
+                            s.status === 'unlocked' ? 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200' :
+                            'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                          }`}
+                        >
+                          {s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Summary */}
               <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6 mb-8">

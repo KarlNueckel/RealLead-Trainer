@@ -7,6 +7,7 @@ import { CallSimulationPage } from "./components/CallSimulationPage";
 import AveryPage from "./pages/AveryPage";
 import TestVapi from "./TestVapi";
 import SummaryWrapper from "./components/SummaryWrapper";
+import { Toaster } from "./components/ui/sonner";
 
 function ConversationWrapper() {
   const location = useLocation();
@@ -49,6 +50,7 @@ function ConversationWrapper() {
 function App() {
   return (
     <BrowserRouter>
+      <Toaster position="top-center" richColors />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/scenarios" element={<CallScenarios />} />

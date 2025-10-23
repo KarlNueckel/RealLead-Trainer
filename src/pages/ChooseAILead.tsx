@@ -9,7 +9,8 @@ export default function ChooseAILead() {
   const [persona, setPersona] = useState<Persona | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const scenario = location.state?.scenario || "Seller Lead - Initial Call";
+  const params = new URLSearchParams(location.search);
+  const scenario = (location.state?.scenario as string) || params.get('path') || "Seller Lead - Referral";
   const isReferral = String(scenario).toLowerCase().includes("seller lead - referral");
   const allowedIds = isReferral ? ["avery", "morgan", "quinn"] : [];
 

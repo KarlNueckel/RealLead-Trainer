@@ -40,6 +40,8 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const [scriptChunks, setScriptChunks] = useState<ScriptChunk[]>([]);
   const [currentScriptIndex, setCurrentScriptIndex] = useState(0);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const lastOffScriptRef = useRef<boolean>(false);
+  const lastUserStartRef = useRef<number>(0);
   const userSilenceCallbackRef = useRef<(() => void) | null>(null);
   const aiFinishCallbackRef = useRef<(() => void) | null>(null);
   const userSilenceTimeoutRef = useRef<number | null>(null);
@@ -63,6 +65,11 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const vapiRef = useRef<InstanceType<typeof Vapi> | null>(null);
 
   // ===== Transcript builder helpers (role inference, turn tracking, de-dupe) =====
+  // ================== Transcript Dedup + Attribution Helpers ==================
+  const DUP_WINDOW_MS = 5000;         // same-role dedupe window
+  const DUP_THRESHOLD = 0.90;         // same-role similarity threshold
+  const CROSS_ECHO_WINDOW_MS = 5000;  // cross-role echo guard window
+  const CROSS_ECHO_THRESHOLD = 0.90;  // cross-role similarity threshold
   const normalizeText = (s: string) =>
     String(s || "")
       .toLowerCase()
@@ -72,14 +79,44 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       .trim();
 
   const recentByRoleRef = useRef<{ user: string; ai: string }>({ user: "", ai: "" });
+  const lastByRoleEntryRef = useRef<{ user: { text: string; time: number }; ai: { text: string; time: number } }>({
+    user: { text: "", time: 0 },
+    ai: { text: "", time: 0 },
+  });
   const currentSpeakerRef = useRef<"user" | "ai" | null>(null);
   const lastSpokeRef = useRef<"user" | "assistant">("user");
-  const lastEntryRef = useRef<{ text: string; role: "user" | "assistant"; time: number }>({
-    text: "",
-    role: "user",
-    time: 0,
-  });
   const lastEventTypeRef = useRef<string | null>(null);
+
+  // Near-duplicate detection helpers
+  const levenshtein = (a: string, b: string) => {
+    const m = a.length;
+    const n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    const dp = new Array(n + 1);
+    for (let j = 0; j <= n; j++) dp[j] = j;
+    for (let i = 1; i <= m; i++) {
+      let prev = i - 1;
+      dp[0] = i;
+      for (let j = 1; j <= n; j++) {
+        const tmp = dp[j];
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + cost);
+        prev = tmp;
+      }
+    }
+    return dp[n];
+  };
+  const similarity = (a: string, b: string) => {
+    const longer = a.length >= b.length ? a : b;
+    const shorter = a.length >= b.length ? b : a;
+    const L = longer.length;
+    if (L === 0) return 1;
+    const dist = levenshtein(longer, shorter);
+    return (L - dist) / L;
+  };
+
+  
 
   const appendFinal = useCallback(
     (role: "user" | "ai", text: string, source: string) => {
@@ -105,35 +142,56 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
     [turn, timeElapsed]
   );
 
-  // Smarter appender that uses currentRole/lastSpoke and flips or drops echo lines
-  const appendFinalSmart = useCallback(
-    (event: any, source: string) => {
-      type Role = "user" | "assistant";
-      let role: Role = ((event?.role as Role) || (currentRole ? (currentRole === 'ai' ? 'assistant' : 'user') : undefined) || (lastSpokeRef.current ?? 'user')) as Role;
-      const text: string | undefined = event?.transcript || event?.input || event?.text || undefined;
-      if (!text) return;
-
+  // Debounced appender that prevents near-duplicate injections
+  const appendFinalSafe = useCallback(
+    (role: "user" | "ai", text: string, source: string) => {
       const norm = normalizeText(text);
-      const lastNorm = normalizeText(lastEntryRef.current.text);
+      if (!norm) return;
       const now = Date.now();
-
-      if (norm && lastNorm && norm === lastNorm && (now - lastEntryRef.current.time) < 2000) {
-        if (lastEntryRef.current.role === 'user' && role === 'user') {
-          // likely assistant echo without proper role → flip
-          role = 'assistant';
-          console.log("🔁 Flipped role to ASSISTANT for echo line:", text);
-        } else {
-          console.log("🟡 Dropping duplicate:", text);
+      const lastByRole = lastByRoleEntryRef.current[role];
+      if (lastByRole && now - lastByRole.time < DUP_WINDOW_MS) {
+        const lastNormText = normalizeText(lastByRole.text);
+        const sim = similarity(norm, lastNormText);
+        if (sim >= DUP_THRESHOLD) {
+          console.log("🚫 same-role duplicate:", { role, text, sim: sim.toFixed(2) });
           return;
         }
       }
 
-      lastEntryRef.current = { text, role, time: now };
-      const speaker: "user" | "ai" = role === 'assistant' ? 'ai' : 'user';
-      appendFinal(speaker, text, source);
+      // Cross-role echo guard
+      const otherRole: "user" | "ai" = role === 'user' ? 'ai' : 'user';
+      const lastOther = lastByRoleEntryRef.current[otherRole];
+      if (lastOther && now - lastOther.time < CROSS_ECHO_WINDOW_MS) {
+        const otherNorm = normalizeText(lastOther.text);
+        const simOther = similarity(norm, otherNorm);
+        if (simOther >= CROSS_ECHO_THRESHOLD) {
+          console.log("🚫 cross-role echo dropped:", { role, text, sim: simOther.toFixed(2) });
+          return;
+        }
+      }
+      lastByRoleEntryRef.current[role] = { text, time: now };
+      appendFinal(role, text, source);
     },
-    [appendFinal, currentRole]
+    [appendFinal]
   );
+
+  // appendFinalSmart removed; unified logic handled in appendFinalSafe
+
+  // Helper to compute fuzzy match with dynamic threshold tolerant of short phrases
+  const shouldAdvanceOnMatch = (expected: string, said: string) => {
+    const normExpected = normalizeText(expected);
+    const normSaid = normalizeText(said);
+    if (!normExpected || !normSaid) return false;
+    const expectedWords = normExpected.split(' ').filter(Boolean);
+    const saidWords = normSaid.split(' ').filter(Boolean);
+    const saidSet = new Set(saidWords);
+    const overlap = expectedWords.filter(w => saidSet.has(w)).length;
+    const ratio = overlap / Math.max(4, expectedWords.length);
+    const lenFrac = Math.min(1, saidWords.length / Math.max(4, expectedWords.length));
+    const minRequired = 0.15 + 0.25 * lenFrac; // 0.15..0.40 depending on how much was said
+    console.log('🧪 Match ratio:', ratio.toFixed(2), 'minRequired:', minRequired.toFixed(2), 'overlap', overlap, '/', expectedWords.length);
+    return ratio >= minRequired || overlap >= 3; // keyword floor for very short lines
+  };
 
   // Pretty console logs for user vs AI
   const logUserSpeech = (text: string, source: string, t: number) => {
@@ -170,7 +228,6 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       client.on?.('message', (msg: any) => {
         try {
           console.log("🗣️ Raw message event:", msg);
-          const prevType = lastEventTypeRef.current;
           lastEventTypeRef.current = msg?.type || null;
           // Heuristic channel/source detection to separate mic vs AI audio
           const isFromMic = (
@@ -197,6 +254,9 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
               lastSpokeRef.current = roleMapped === 'ai' ? 'assistant' : 'user';
               currentSpeakerRef.current = roleMapped;
               console.log(`🎙️ ${roleMapped.toUpperCase()} started speaking (turn ${turn})`);
+              if (roleMapped === 'user') {
+                lastUserStartRef.current = Date.now();
+              }
             } else if (msg?.status === 'stopped') {
               console.log(`🛑 ${roleMapped.toUpperCase()} stopped speaking`);
               setCurrentRole(null);
@@ -222,32 +282,63 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
             if (text) {
               if (active && speaker && speaker !== active) {
                 console.log("🚫 Ignored transcript (role mismatch)", { role: speaker, active, text });
-                return;
+                // Grace window: accept user finals within 1s from user start even if AI marked active
+                if (speaker === 'user' && Date.now() - lastUserStartRef.current <= 1000) {
+                  console.log('⏳ Accepting user final within grace window');
+                } else {
+                  return;
+                }
               }
-              appendFinal(speaker, text, 'transcript.final');
-              if (speaker === 'user') logUserSpeech(text, 'transcript.final', turn);
-              else logAISpeech(text, 'transcript.final', turn);
+              appendFinalSafe(speaker, text, 'transcript.final');
+              if (speaker === 'user') {
+                logUserSpeech(text, 'transcript.final', turn);
+                // Attempt fuzzy match to advance slides when user speech aligns with current script
+                if (scriptChunks.length > 0) {
+                  try {
+                    const expected = scriptChunks[currentScriptIndex]?.text || '';
+                    if (shouldAdvanceOnMatch(expected, text)) {
+                        setCurrentScriptIndex(prev => {
+                          const next = Math.min(prev + 1, scriptChunks.length - 1);
+                          if (next !== prev) console.log('📖 (Vapi transcript) Advancing due to user script match ->', next);
+                          return next;
+                        });
+                      }
+                  } catch {}
+                }
+              } else {
+                logAISpeech(text, 'transcript.final', turn);
+              }
             }
             return;
           }
 
-          // Optional: voice-input handler just for user mic input (suppress assistant echoes)
+          // Strict mic-origin attribution for voice-input to avoid echoes
           if (msg?.type === 'voice-input') {
-            // Debug: show source/role for voice-input origin
-            console.log(`🎧 VOICE INPUT received from ${msg?.role || 'unknown'} (source=${msg?.source || 'n/a'})`, msg?.input || msg?.text || '');
-            // Skip AI voice-input echoes and when assistant is speaking or after model-output tokenization
-            const isUserByMeta = (msg?.role === 'user') || (msg?.source === 'microphone') || (msg?.channel === 'microphone') || (typeof msg?.turn === 'number' && (msg.turn % 2 === 1));
-            const isEchoByContext = isFromAI || currentSpeakerRef.current === 'ai' || lastSpokeRef.current === 'assistant' || prevType === 'model-output' || prevType === 'response.delta';
-            if (!isUserByMeta || isEchoByContext) {
-              console.log('🚫 Skipping AI voice-input echo');
-              return;
-            }
             const text = msg?.input || msg?.text || '';
-            if (text) {
-              appendFinal('user', text, 'voice-input');
-              logUserSpeech(text, 'voice-input', turn);
+            if (!text || !text.trim()) return;
+            const src = msg?.source;
+            const channel = msg?.channel;
+            const isMic = src === 'microphone' || channel === 'microphone' || channel === 'input_audio_buffer';
+            if (!isMic) {
+              console.log('⚠️ voice-input ignored (non-mic origin):', { src, channel, text });
               return;
             }
+            appendFinalSafe('user', text, 'voice-input');
+            logUserSpeech(text, 'voice-input', turn);
+            // If using script view, attempt fuzzy match to current user script chunk
+            if (scriptChunks.length > 0) {
+              try {
+                const expected = scriptChunks[currentScriptIndex]?.text || '';
+                if (shouldAdvanceOnMatch(expected, text)) {
+                  setCurrentScriptIndex(prev => {
+                    const next = Math.min(prev + 1, scriptChunks.length - 1);
+                    if (next !== prev) console.log('📖 (Vapi) Advancing due to user script match ->', next);
+                    return next;
+                  });
+                }
+              } catch {}
+            }
+            return;
           }
 
           // Model/output token streams: do not persist to transcript (debug only)
@@ -256,12 +347,11 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
           }
 
           // Generic fallback: capture simple role/text messages if present (no pretty log)
-          const role = (msg?.role || msg?.sender || '').toLowerCase();
           const text = msg?.text || msg?.content || msg?.message || '';
           if (!text) return;
           let speaker = classifySpeaker(msg);
           if (!speaker && currentRole) speaker = currentRole;
-          appendFinal(speaker, text, 'fallback');
+          appendFinalSafe(speaker, text, 'fallback');
         } catch {}
       });
       // Some SDKs emit transcript/update events; capture conservatively if present
@@ -273,7 +363,7 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
           const isUser = !!(evt?.is_user || evt?.from === 'user');
           const speaker = isUser ? 'user' : 'ai';
           console.log(`💬 ${speaker.toUpperCase()}:`, text);
-          appendFinal(speaker, text, 'transcript.channel');
+          appendFinalSafe(speaker, text, 'transcript.channel');
         } catch {}
       });
       vapiRef.current = client;
@@ -327,7 +417,8 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       const sections = referralScriptContent
         .split(/\n\n+/)
         .map((s) => s.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter((s) => s !== '$');
 
       for (const _ of sections) {
         chunks.push({ speaker: "user", text: "No Script" });
@@ -343,7 +434,11 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       let currentLabel = "";
 
       // Split by double newlines to get sections
-      const sections = config.script.content.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
+      const sections = config.script.content
+        .split(/\n\n+/)
+        .map(s => s.trim())
+        .filter(Boolean)
+        .filter((s) => s !== '$'); // ignore "$" sentinel slides
       
       console.log("📝 Found sections:", sections.length);
       
@@ -404,7 +499,18 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
 
 ${scenarioContext[config.scenario as keyof typeof scenarioContext]}
 
-Keep responses conversational and realistic. Respond naturally as if in a real phone conversation. Stay in character throughout the call.`;
+Keep responses conversational and realistic. Respond naturally as if in a real phone conversation. Stay in character throughout the call.
+
+You are a real estate training AI following a structured call script.
+For every message you output, include a JSON field named "offScript".
+Set "offScript": true if your message is conversational, small talk, or not directly part of the training script (e.g., greetings, asking how the agent is doing, clarifying off-topic questions).
+Set "offScript": false if your message advances the actual call script steps or refers to the property, price, motivation, etc.
+Always respond as a JSON object with this structure:
+{
+  "text": "<spoken text>",
+  "offScript": <true or false>
+}
+Respond with ONLY the JSON object (no markdown, no preface, no code fences).`;
     }
 
     // Fallback to old system (if no persona selected)
@@ -429,7 +535,18 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
       "hard": "Be very challenging with complex objections. Push back hard and test their skills.",
     };
 
-    return `${scenarioPrompts[config.scenario as keyof typeof scenarioPrompts]} ${moodModifiers[config.mood as keyof typeof moodModifiers]} ${difficultyModifiers[config.difficulty as keyof typeof difficultyModifiers]} Keep responses conversational and realistic. Respond naturally as if in a real phone conversation. Stay in character throughout the call.`;
+    return `${scenarioPrompts[config.scenario as keyof typeof scenarioPrompts]} ${moodModifiers[config.mood as keyof typeof moodModifiers]} ${difficultyModifiers[config.difficulty as keyof typeof difficultyModifiers]} Keep responses conversational and realistic. Respond naturally as if in a real phone conversation. Stay in character throughout the call.
+
+You are a real estate training AI following a structured call script.
+For every message you output, include a JSON field named "offScript".
+Set "offScript": true if your message is conversational, small talk, or not directly part of the training script (e.g., greetings, asking how the agent is doing, clarifying off-topic questions).
+Set "offScript": false if your message advances the actual call script steps or refers to the property, price, motivation, etc.
+Always respond as a JSON object with this structure:
+{
+  "text": "<spoken text>",
+  "offScript": <true or false>
+}
+Respond with ONLY the JSON object (no markdown, no preface, no code fences).`;
   };
 
   // Initialize WebSocket connection (skip for Avery)
@@ -539,19 +656,22 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
     };
   }, []);
 
-  // Timer
+  // Timer: consider either realtime connection or Avery call active
   useEffect(() => {
-    if (!isConnected) return;
+    const wsOpen = !!(wsRef.current && wsRef.current.readyState === WebSocket.OPEN);
+    const running = isConnected || callActive || wsOpen;
+    if (!running) return;
 
-    // Set call start time
-    callStartTimeRef.current = Date.now();
+    if (!callStartTimeRef.current) {
+      callStartTimeRef.current = Date.now();
+    }
 
     const timer = setInterval(() => {
       setTimeElapsed((prev) => prev + 1);
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isConnected]);
+  }, [isConnected, callActive]);
 
   // Handle AI-initiated call ending
   useEffect(() => {
@@ -597,6 +717,46 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
     // Log all events for debugging
     console.log("Realtime event:", event.type, event);
 
+    // Pre-handle key transcript events with unified safe appender to avoid duplicates
+    try {
+      if (event?.type === 'response.output_item.done' && event?.item?.type === 'message' && event?.item?.role === 'assistant') {
+        const content = event.item?.content;
+        if (Array.isArray(content)) {
+          const textContent = content.find((c: any) => c?.type === 'text');
+          if (textContent?.text) {
+            const raw = textContent.text as string;
+            let aiText = raw;
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed.text === 'string') aiText = parsed.text;
+            } catch {}
+            appendFinalSafe('ai', aiText, 'realtime.pre');
+            // Preserve audio generation
+            try { await generateElevenLabsAudio(aiText); } catch {}
+            return; // skip switch handling to prevent double-add
+          }
+        }
+      }
+      if (event?.type === 'conversation.item.input_audio_transcription.completed') {
+        const userMessage = event?.transcript as string;
+        if (userMessage) {
+          appendFinalSafe('user', userMessage, 'realtime.pre');
+          // Keep slide advancement behavior
+          if (scriptChunks.length > 0) {
+            const expected = scriptChunks[currentScriptIndex]?.text || '';
+            if (shouldAdvanceOnMatch(expected, userMessage)) {
+              setCurrentScriptIndex(prev => {
+                const next = Math.min(prev + 1, scriptChunks.length - 1);
+                if (next !== prev) console.log('📖 (Realtime) Advancing due to user script match ->', next);
+                return next;
+              });
+            }
+          }
+          return; // avoid duplicate via switch case
+        }
+      }
+    } catch {}
+
     switch (event.type) {
       case "session.created":
         console.log("✅ Session created:", event.session);
@@ -615,37 +775,7 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
         break;
 
       case "response.output_item.done":
-        // Complete AI response in text-only mode
-        console.log("✅ Output item done:", event.item);
-        if (event.item?.type === "message" && event.item?.role === "assistant") {
-          const content = event.item.content;
-          if (Array.isArray(content)) {
-            // Find text content
-            const textContent = content.find((c: any) => c.type === "text");
-            if (textContent?.text) {
-              const aiMessage = textContent.text;
-              console.log("🎤 AI response text:", aiMessage);
-              console.log("💬 ASSISTANT:", aiMessage);
-              
-              // Calculate actual elapsed time
-              const actualElapsed = callStartTimeRef.current > 0 
-                ? Math.floor((Date.now() - callStartTimeRef.current) / 1000)
-                : timeElapsed;
-              
-              setTranscript((prev) => {
-                const updated = [
-                  ...prev,
-                  { speaker: "ai", message: aiMessage, timestamp: actualElapsed },
-                ];
-                console.log("📝 Transcript updated:", updated);
-                return updated;
-              });
-              
-              // Generate audio with ElevenLabs
-              await generateElevenLabsAudio(aiMessage);
-            }
-          }
-        }
+        // Handled by pre-handler via appendFinalSafe + audio
         break;
 
       case "response.text.delta":
@@ -663,25 +793,7 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
         break;
 
       case "conversation.item.input_audio_transcription.completed":
-        // User's speech transcribed
-        console.log("✅ User speech transcribed:", event.transcript);
-        const userMessage = event.transcript;
-        if (userMessage) {
-          // Calculate actual elapsed time
-          const actualElapsed = callStartTimeRef.current > 0 
-            ? Math.floor((Date.now() - callStartTimeRef.current) / 1000)
-            : timeElapsed;
-          
-          console.log("💬 USER:", userMessage);
-          setTranscript((prev) => {
-            const updated = [
-              ...prev,
-              { speaker: "user", message: userMessage, timestamp: actualElapsed },
-            ];
-            console.log("📝 Transcript updated:", updated);
-            return updated;
-          });
-        }
+        // Handled by pre-handler via appendFinalSafe (+ slide advance)
         break;
 
       case "input_audio_buffer.speech_started":
@@ -1247,16 +1359,21 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
         // AI stopped speaking
         setIsAISpeaking(false);
         
-        // Advance to next script chunk after a brief pause
+        // Advance to next script chunk only if AI was on-script
+        // Small delay keeps flow natural
         setTimeout(() => {
-          setCurrentScriptIndex(prev => {
-            const nextIndex = prev + 1;
-            if (nextIndex < scriptChunks.length) {
-              console.log(`📖 Advancing to script chunk ${nextIndex}/${scriptChunks.length}`);
-              return nextIndex;
-            }
-            return prev;
-          });
+          if (!lastOffScriptRef.current) {
+            setCurrentScriptIndex(prev => {
+              const nextIndex = prev + 1;
+              if (nextIndex < scriptChunks.length) {
+                console.log(`📖 Advancing to script chunk ${nextIndex}/${scriptChunks.length}`);
+                return nextIndex;
+              }
+              return prev;
+            });
+          } else {
+            console.log('⏸️ Off-script detected; not advancing slide');
+          }
         }, 500);
         
         // If AI is ending the call, play disconnect tone then end
@@ -1540,6 +1657,22 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
             />
           )
         )}
+        {/* Manual controls as safety net */}
+        <div className="fixed bottom-6 left-6 z-50 flex gap-2">
+          <button
+            onClick={() => setCurrentScriptIndex((prev) => Math.max(prev - 1, 0))}
+            disabled={currentScriptIndex <= 0}
+            className={`px-3 py-2 text-sm font-medium rounded-lg border shadow ${currentScriptIndex <= 0 ? 'bg-white/60 border-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white/90 border-gray-300 hover:bg-white'}`}
+          >
+            ◀ Previous Script
+          </button>
+          <button
+            onClick={() => setCurrentScriptIndex((prev) => Math.min(prev + 1, scriptChunks.length - 1))}
+            className="px-3 py-2 text-sm font-medium bg-white/90 border border-gray-300 rounded-lg shadow hover:bg-white"
+          >
+            ▶ Advance Script
+          </button>
+        </div>
         {/* Avery: Start/End Call toggle (voice-only via SDK) */}
         {config.persona?.id === 'avery' && (
           <button
@@ -1682,5 +1815,8 @@ Keep responses conversational and realistic. Respond naturally as if in a real p
       return "user";
     }
   };
+
+
+
 
 

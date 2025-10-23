@@ -3,6 +3,7 @@ import { URL } from "url";
 
 // Local cache for debugging and quick checks
 let latestTranscript = [];
+let lastModelOutputText = "";
 
 const BACKEND_HOST = "localhost";
 const BACKEND_PORT = 3001;
@@ -71,6 +72,16 @@ const server = http.createServer((req, res) => {
 
       // If it looks like an end-of-call-report, capture transcript for debug
       const type = parsed?.type || parsed?.event;
+      const text = parsed?.data?.text || parsed?.data?.transcript || parsed?.text || parsed?.message || "";
+      // Track last model output text
+      if (type === "model-output" && text) {
+        lastModelOutputText = String(text);
+      }
+      // Filter voice-input echoes that exactly repeat last model output
+      if (type === "voice-input" && text && lastModelOutputText && String(text) === lastModelOutputText) {
+        console.log("🚫 Skipping echo from model-output in listener");
+        return sendJson(res, 200, { ok: true, skipped: true });
+      }
       if (type === "end-of-call-report") {
         const data = parsed?.data || parsed?.payload || {};
         const raw = data?.transcript || data?.artifacts?.transcript || [];

@@ -40,6 +40,22 @@ model Script {
   @@index([uploadedAt])
 }
 
+// 📈 Training steps and progression per path (e.g., "Seller Lead - Referral")
+model TrainingStep {
+  id        String   @id @default(cuid())
+  userId    String?  // Optional: tie to user later
+  path      String   // e.g., "Seller Lead - Referral"
+  name      String   // e.g., "Initial Call"
+  status    String   // 'locked' | 'unlocked' | 'completed'
+  score     Int?
+  order     Int      // ordering within a path flow
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, path])
+  @@unique([userId, path, name])
+}
+
 // 👤 Future: User model for authentication
 // model User {
 //   id            String   @id @default(cuid())

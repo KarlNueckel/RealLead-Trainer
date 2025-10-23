@@ -1,35 +1,27 @@
 export const referralScriptContent = `Hi [Name], this is [Agent] with [Company].
-(Insert name of person that gave you referral) asked me to speak with you about your upcoming real estate needs.
-What can I help you with?
+[Referring Agent’s Name] mentioned you might be considering selling your property, so I wanted to personally reach out and introduce myself. How are you doing today?
 
 $
 
-I’d love to help you with that.
-I can see you today at _______ or tomorrow at _______.
-Which is better for you?
+That’s great! So tell me a little about the property—what are you thinking in terms of price, number of bedrooms and bathrooms, and any updates or repairs you’ve made or might need?
+
 
 $
 
-
-(If yes) Great! Thanks! Anyone else?
-Anyone who is changing jobs, graduating, getting married, etc.?
-Great. Can I use your name?
-I promise I’ll let you know if they decide to use me as an agent,
-and I will take great care of anyone who is a friend of yours.
-
-If anyone else comes to mind, please give me a call! Thanks!
+Got it. And what’s motivating the possible move—are you looking to move locally or out of the area?
 
 $
 
-(If no) Thank you for taking a moment to think about that.
-I’d like to repay the favor.
+Perfect, thank you for sharing that. Every seller has different needs, so I always like to ask—what are you looking for in a real estate agent? How can I best help you through this process?
+
 
 $
 
-You know, I send out some terrific items of value and updates
-to our friends, family, and past clients to keep them informed on the market.
-I’d be happy to include you—free of charge or obligation, of course—just great information.
-Can I verify your email address?`;
+Based on what you’ve told me, I’d love to meet with you for a quick listing consultation—it’s a short meeting where I can walk you through your home’s current market value, what buyers are paying in your area, and the best strategy to get your price.
+I have [Day, Time] or [Day, Time] available—what works better for you?
+
+$
+
+Awesome, I’m looking forward to meeting you. I’ll send you a quick confirmation and a few prep tips before we meet—sound good?`;
 
 export default referralScriptContent;
-

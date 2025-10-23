@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import scriptRoutes from './routes/scripts.js';
 import ttsRoutes from './routes/tts.js';
 import scoringRoutes from './routes/scoring.js';
+import trainingRoutes from './routes/training.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -50,6 +51,7 @@ app.use('/uploads', express.static('server/uploads'));
 app.use('/api/scripts', scriptRoutes);
 app.use('/api/tts', ttsRoutes);
 app.use('/api/scoring', scoringRoutes);
+app.use('/api/training', trainingRoutes);
 
 // ====================================
 // 📞 VAPI WEBHOOK + TRANSCRIPT CACHE
