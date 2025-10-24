@@ -14,7 +14,10 @@ export default function ChooseAILead() {
   const scenario = (location.state?.scenario as string) || params.get('path') || "Seller Lead - Referral";
   const isReferral2 = params.get('seller_referral2') === 'true';
   const isReferral = String(scenario).toLowerCase().includes("seller lead - referral");
-  const allowedIds = isReferral ? ["avery", "morgan", "quinn"] : [];
+  // For Referral 2, only Avery is available. For base Referral, Avery + Morgan.
+  const allowedIds = isReferral
+    ? (isReferral2 ? ["avery"] : ["avery", "morgan"]) 
+    : [];
   // Keep UX identical to original page; no auto-select.
 
   // When referral2, we keep the same persona list but change labeling on Continue
@@ -56,7 +59,13 @@ export default function ChooseAILead() {
           {persona && (
             <button
               onClick={() => {
-                const vapiAssistantId = getAssistantOverrideFromSearch(location.search, (persona as any)?.id);
+                // Assistant override via URL flags (e.g., Referral 2 Avery alternate)
+                let vapiAssistantId = getAssistantOverrideFromSearch(location.search, (persona as any)?.id);
+
+                // Inject Morgan's Vapi assistant for base Referral scenario only
+                if (isReferral && !isReferral2 && (persona as any)?.id === 'morgan') {
+                  vapiAssistantId = '7a84ad61-a24c-4f05-a4f7-eefca3630201';
+                }
                 const state = {
                   scenario,
                   persona,

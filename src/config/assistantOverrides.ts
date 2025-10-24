@@ -16,4 +16,3 @@ export function getAssistantOverrideFromSearch(search: string, personaId?: strin
   } catch {}
   return undefined;
 }
-

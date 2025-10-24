@@ -210,7 +210,7 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   }, [transcript]);
 
   useEffect(() => {
-    if (config?.persona?.id !== 'avery') return;
+    if (!config?.vapiAssistantId && config?.persona?.id !== 'avery') return;
     try {
       const client = new (Vapi as any)("079cf384-f6b0-4c56-a7b5-6843b494e4fa");
       client.on?.('call-start', () => setIsConnected(true));
@@ -387,10 +387,9 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       try { vapiRef.current?.removeAllListeners?.(); vapiRef.current?.stop?.(); } catch {}
       vapiRef.current = null;
     };
-  }, [config?.persona?.id]);
+  }, [config?.persona?.id, config?.vapiAssistantId]);
 
   const handleToggleVapiCall = async () => {
-    if (config?.persona?.id !== 'avery') return;
     const client = vapiRef.current as any;
     if (!client) return;
     try {
@@ -553,9 +552,9 @@ Always respond as a JSON object with this structure:
 Respond with ONLY the JSON object (no markdown, no preface, no code fences).`;
   };
 
-  // Initialize WebSocket connection (skip for Avery)
+  // Initialize WebSocket connection (skip when using Vapi)
   useEffect(() => {
-    if (config?.persona?.id === 'avery') { setIsInitializing(false); return; }
+    if (config?.persona?.id === 'avery' || config?.vapiAssistantId) { setIsInitializing(false); return; }
     let mounted = true;
 
     const initializeCall = async () => {
