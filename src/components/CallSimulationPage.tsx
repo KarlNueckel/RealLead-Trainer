@@ -49,6 +49,11 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const hasUserSpokenRef = useRef<boolean>(false);
   const initialGreetingTimeoutRef = useRef<number | null>(null);
   const silenceCountRef = useRef<number>(0);
+  // Track if the user spoke since the last AI turn; used to gate auto-advance
+  const userSpokeSinceLastAIRef = useRef<boolean>(false);
+  // Mirror transcript in a ref for up-to-date checks inside event handlers if needed
+  const transcriptRef = useRef<TranscriptEntry[]>([]);
+  useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
   
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -63,6 +68,23 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   // Avery via Vapi SDK (no widget)
   const [callActive, setCallActive] = useState(false);
   const vapiRef = useRef<InstanceType<typeof Vapi> | null>(null);
+
+  // Auto-advance slides when AI stops speaking, but only if user spoke immediately before
+  const prevIsAISpeakingRef = useRef<boolean>(false);
+  useEffect(() => {
+    const wasSpeaking = prevIsAISpeakingRef.current;
+    const nowSpeaking = isAISpeaking;
+    if (wasSpeaking && !nowSpeaking) {
+      if (userSpokeSinceLastAIRef.current && scriptChunks.length > 0) {
+        setCurrentScriptIndex((prev) => Math.min(prev + 1, scriptChunks.length - 1));
+        userSpokeSinceLastAIRef.current = false;
+        console.log('📖 Auto-advanced on AI stop because user spoke previously');
+      } else {
+        console.log('⏭️ AI stopped but no prior user speech -> no advance');
+      }
+    }
+    prevIsAISpeakingRef.current = nowSpeaking;
+  }, [isAISpeaking, scriptChunks.length]);
 
   // ===== Transcript builder helpers (role inference, turn tracking, de-dupe) =====
   // ================== Transcript Dedup + Attribution Helpers ==================
@@ -216,7 +238,15 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       client.on?.('call-start', () => setIsConnected(true));
       client.on?.('call-end', () => { setIsConnected(false); setIsAISpeaking(false); setCallActive(false); });
       client.on?.('speech-start', () => setIsAISpeaking(true));
-      client.on?.('speech-end', () => setIsAISpeaking(false));
+      client.on?.('speech-end', () => {
+        setIsAISpeaking(false);
+        // Auto-advance only if the user talked directly before this AI stop
+        if (userSpokeSinceLastAIRef.current && scriptChunks.length > 0) {
+          setCurrentScriptIndex((prev) => Math.min(prev + 1, scriptChunks.length - 1));
+          userSpokeSinceLastAIRef.current = false;
+          console.log('📖 (Vapi) Auto-advanced on AI stop because user spoke previously');
+        }
+      });
       // Optional: drive local mic indicator if present in this build
       client.on?.('volume-level', (volume: number) => {
         try {
@@ -262,6 +292,10 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
               setCurrentRole(null);
               currentSpeakerRef.current = null;
               setTurn((prev) => prev + 1);
+              // Mark that the user spoke to enable next auto-advance when AI finishes
+              if (roleMapped === 'user') {
+                userSpokeSinceLastAIRef.current = true;
+              }
             }
             return; // handled
           }
@@ -292,19 +326,8 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
               appendFinalSafe(speaker, text, 'transcript.final');
               if (speaker === 'user') {
                 logUserSpeech(text, 'transcript.final', turn);
-                // Attempt fuzzy match to advance slides when user speech aligns with current script
-                if (scriptChunks.length > 0) {
-                  try {
-                    const expected = scriptChunks[currentScriptIndex]?.text || '';
-                    if (shouldAdvanceOnMatch(expected, text)) {
-                        setCurrentScriptIndex(prev => {
-                          const next = Math.min(prev + 1, scriptChunks.length - 1);
-                          if (next !== prev) console.log('📖 (Vapi transcript) Advancing due to user script match ->', next);
-                          return next;
-                        });
-                      }
-                  } catch {}
-                }
+                // Mark that the user spoke; auto-advance will occur on AI stop
+                userSpokeSinceLastAIRef.current = true;
               } else {
                 logAISpeech(text, 'transcript.final', turn);
               }
@@ -744,17 +767,8 @@ Respond with ONLY the JSON object (no markdown, no preface, no code fences).`;
         const userMessage = event?.transcript as string;
         if (userMessage) {
           appendFinalSafe('user', userMessage, 'realtime.pre');
-          // Keep slide advancement behavior
-          if (scriptChunks.length > 0) {
-            const expected = scriptChunks[currentScriptIndex]?.text || '';
-            if (shouldAdvanceOnMatch(expected, userMessage)) {
-              setCurrentScriptIndex(prev => {
-                const next = Math.min(prev + 1, scriptChunks.length - 1);
-                if (next !== prev) console.log('📖 (Realtime) Advancing due to user script match ->', next);
-                return next;
-              });
-            }
-          }
+          // Mark that the user spoke; auto-advance will occur on AI stop
+          userSpokeSinceLastAIRef.current = true;
           return; // avoid duplicate via switch case
         }
       }
@@ -829,6 +843,8 @@ Respond with ONLY the JSON object (no markdown, no preface, no code fences).`;
         console.log("🔍 Silence callback ref exists?", !!userSilenceCallbackRef.current);
         setIsRecording(false);
         lastUserSpeechTimeRef.current = Date.now();
+        // Mark that the user spoke to enable next auto-advance when AI finishes
+        userSpokeSinceLastAIRef.current = true;
         
         // Trigger user silence callback for KaraokeCall
         if (userSilenceCallbackRef.current) {
