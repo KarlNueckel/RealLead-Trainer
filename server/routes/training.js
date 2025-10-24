@@ -42,7 +42,7 @@ async function ensureSteps(userId, path) {
 // GET /api/training/steps?path=Seller%20Lead%20-%20Referral
 router.get('/steps', async (req, res) => {
   try {
-    const userId = (req.query.userId || null) as string | null;
+    const userId = req.query.userId || null;
     const path = String(req.query.path || '').trim();
     if (!path) return res.status(400).json({ error: 'Missing path' });
     const steps = await ensureSteps(userId, path);
@@ -111,4 +111,3 @@ router.post('/progress', async (req, res) => {
 });
 
 export default router;
-
