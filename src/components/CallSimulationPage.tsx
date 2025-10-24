@@ -371,7 +371,9 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       (async () => {
         try {
           if (!callActive) {
-            await (client as any).start("80afc02e-adde-440d-b93c-dce41722a56f");
+            const defaultAssistant = "80afc02e-adde-440d-b93c-dce41722a56f";
+            const assistantId = (config as any)?.vapiAssistantId || defaultAssistant;
+            await (client as any).start(assistantId);
             setCallActive(true);
           }
         } catch (err) {
@@ -393,7 +395,9 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
     if (!client) return;
     try {
       if (!callActive) {
-        await client.start("80afc02e-adde-440d-b93c-dce41722a56f");
+        const defaultAssistant = "80afc02e-adde-440d-b93c-dce41722a56f";
+        const assistantId = (config as any)?.vapiAssistantId || defaultAssistant;
+        await client.start(assistantId);
         setCallActive(true);
       } else {
         await client.stop();

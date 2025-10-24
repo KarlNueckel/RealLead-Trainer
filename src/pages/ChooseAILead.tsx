@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useState } from "react";
 import { Persona } from "../config/personas";
 import { ArrowLeft } from "lucide-react";
+import { getAssistantOverrideFromSearch } from "../config/assistantOverrides";
 
 export default function ChooseAILead() {
   const [persona, setPersona] = useState<Persona | null>(null);
@@ -11,8 +12,12 @@ export default function ChooseAILead() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const scenario = (location.state?.scenario as string) || params.get('path') || "Seller Lead - Referral";
+  const isReferral2 = params.get('seller_referral2') === 'true';
   const isReferral = String(scenario).toLowerCase().includes("seller lead - referral");
   const allowedIds = isReferral ? ["avery", "morgan", "quinn"] : [];
+  // Keep UX identical to original page; no auto-select.
+
+  // When referral2, we keep the same persona list but change labeling on Continue
 
   return (
     <div className="min-h-screen flex flex-col items-center py-10 bg-gray-50">
@@ -47,9 +52,19 @@ export default function ChooseAILead() {
       ) : (
         <>
           <PersonaSelection onSelect={setPersona} allowedIds={allowedIds} />
+          
           {persona && (
             <button
-              onClick={() => navigate("/pick-script", { state: { scenario, persona } })}
+              onClick={() => {
+                const vapiAssistantId = getAssistantOverrideFromSearch(location.search, (persona as any)?.id);
+                const state = {
+                  scenario,
+                  persona,
+                  seller_referral2: isReferral2,
+                  vapiAssistantId,
+                } as any;
+                navigate("/pick-script", { state });
+              }}
               className="mt-6 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
             >
               Continue with {persona.displayName}
@@ -60,4 +75,6 @@ export default function ChooseAILead() {
     </div>
   );
 }
+
+
 

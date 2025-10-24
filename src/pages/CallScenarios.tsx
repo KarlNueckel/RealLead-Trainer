@@ -29,6 +29,7 @@ export default function CallScenarios() {
 
   const scenarios = [
     { id: 100, title: 'Seller Lead - Referral', likes: 14, tags: ['Sellers', 'Referrals', 'Phone Call'], location: 'Phone Call' as const },
+    { id: 101, title: 'Seller Lead - Referral 2 (Listing Consultation)', likes: 5, tags: ['Sellers', 'Referrals', 'Phone Call'], location: 'Phone Call' as const },
     { id: 1, title: 'Market Positioning', likes: 6, tags: ['Sellers', 'New Lead', 'Phone Call'], location: 'Phone Call' as const },
     { id: 2, title: 'Sphere of Influence', likes: 10, tags: ['SOI', 'Referrals', 'In Person'], location: 'In Person' as const },
     { id: 3, title: 'Seller Prequalification Questionnaire', likes: 6, tags: ['Sellers', 'Prequalification', 'Phone Call'], location: 'Phone Call' as const },
@@ -50,6 +51,11 @@ export default function CallScenarios() {
     .filter((s) => s.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const handleScenarioClick = (title: string) => {
+    if (title === 'Seller Lead - Referral 2 (Listing Consultation)') {
+      // Route with explicit query flag for the second-stage scenario
+      navigate('/choose-ai-lead?seller_referral2=true', { state: { scenario: title } });
+      return;
+    }
     navigate('/choose-ai-lead', { state: { scenario: title } });
   };
 
@@ -224,6 +230,9 @@ export default function CallScenarios() {
                 title={scenario.title}
                 likes={scenario.likes}
                 location={scenario.location}
+                description={scenario.title === 'Seller Lead - Referral 2 (Listing Consultation)' 
+                  ? 'Second stage of seller training — Avery is ready to discuss listing details and next steps.' 
+                  : undefined}
                 onClick={() => handleScenarioClick(scenario.title)}
               />
             ))}

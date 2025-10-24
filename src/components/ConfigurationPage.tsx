@@ -22,6 +22,7 @@ export interface CallConfig {
   difficulty: string;
   voice?: string; // AI voice selection
   persona?: Persona; // Selected AI persona
+  vapiAssistantId?: string; // Optional override for Vapi assistant (Avery variants)
   script?: {
     name: string;
     content: string;

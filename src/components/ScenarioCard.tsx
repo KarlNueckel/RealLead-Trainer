@@ -7,10 +7,11 @@ interface ScenarioCardProps {
   title: string;
   likes: number;
   location?: ScenarioLocation;
+  description?: string;
   onClick?: () => void;
 }
 
-export function ScenarioCard({ title, likes, location = 'Phone Call', onClick }: ScenarioCardProps) {
+export function ScenarioCard({ title, likes, location = 'Phone Call', description, onClick }: ScenarioCardProps) {
   const [isLiked, setIsLiked] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [likeCount, setLikeCount] = useState(likes);
@@ -43,6 +44,9 @@ export function ScenarioCard({ title, likes, location = 'Phone Call', onClick }:
             <h3 className="text-[#1a2540] uppercase tracking-tight leading-tight text-xl mb-2 group-hover:text-blue-900 transition-colors">
               {title}
             </h3>
+            {description && (
+              <p className="text-gray-600 text-sm mb-2">{description}</p>
+            )}
             <div className="h-1 w-12 bg-gradient-to-r from-blue-600 to-blue-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           </div>
 

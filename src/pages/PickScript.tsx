@@ -7,7 +7,7 @@ import { referralScriptContent } from "../scenarios/referralScript";
 export default function PickScript() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { scenario, persona } = location.state || {};
+  const { scenario, persona, seller_referral2, vapiAssistantId } = location.state || {};
 
   const handleScriptSelect = (scriptName: string) => {
     if (!persona) {
@@ -22,6 +22,8 @@ export default function PickScript() {
       difficulty: persona.difficulty,
       persona: persona,
       voice: persona.elevenLabsVoiceId,
+      // carry assistant override for Vapi (Avery variants)
+      vapiAssistantId: vapiAssistantId,
       script: {
         name: scriptName,
         content: getScriptContent(scriptName),
@@ -62,7 +64,7 @@ export default function PickScript() {
       />
       <h2 className="text-3xl font-semibold mb-8">Select a Training Script</h2>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {["No Script", "Seller Lead - Referral: Calling a Referral (Clash #1)"].map((script) => (
+        {(seller_referral2 ? ["No Script"] : ["No Script", "Seller Lead - Referral: Calling a Referral (Clash #1)"]).map((script) => (
           <div
             key={script}
             onClick={() => handleScriptSelect(script)}
