@@ -1,7 +1,8 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, SlidersHorizontal, Phone, Star, ArrowLeft } from 'lucide-react';
 import { ScenarioCard } from '../components/ScenarioCard';
+import { ScenarioGroup } from '../components/ScenarioGroup';
 import { ColdCallModal } from '../components/ColdCallModal';
 import { FiltersSheet } from '../components/FiltersSheet';
 import { ProgressStepper } from '../components/ProgressStepper';
@@ -157,7 +158,7 @@ export default function CallScenarios() {
             {activeTab === 'content' ? (
               <>
                 <div className="bg-gradient-to-br from-blue-100 to-blue-50 rounded-xl p-2">
-                  <span className="text-2xl">📖</span>
+                  <span className="text-2xl">ðŸ“–</span>
                 </div>
                 <div>
                   <h1 className="text-[#1a2540]">Script Scenarios</h1>
@@ -223,19 +224,59 @@ export default function CallScenarios() {
             </p>
           </div>
         ) : filteredScenarios.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-6">
-            {filteredScenarios.map((scenario) => (
-              <ScenarioCard
-                key={scenario.id}
-                title={scenario.title}
-                likes={scenario.likes}
-                location={scenario.location}
-                description={scenario.title === 'Seller Lead - Referral 2 (Listing Consultation)' 
-                  ? 'Second stage of seller training — Avery is ready to discuss listing details and next steps.' 
-                  : undefined}
-                onClick={() => handleScenarioClick(scenario.title)}
-              />
-            ))}
+          <div className="grid grid-cols-1 gap-6">
+            {(() => {
+              // Coalesce referral scenarios into one expandable group
+              const referralTitles = new Set([
+                'Seller Lead - Referral',
+                'Seller Lead - Referral 2 (Listing Consultation)'
+              ]);
+              const renderItems: any[] = [];
+              let addedGroup = false;
+              for (const s of filteredScenarios) {
+                if (referralTitles.has(s.title)) {
+                  if (!addedGroup) {
+                    renderItems.push({ type: 'group' });
+                    addedGroup = true;
+                  }
+                  continue; // skip individual referral cards
+                }
+                renderItems.push({ type: 'card', item: s });
+              }
+
+              return renderItems.map((entry, idx) => {
+                if (entry.type === 'group') {
+                  const likeSum = (scenarios.find(x => x.id === 100)?.likes || 0) + (scenarios.find(x => x.id === 101)?.likes || 0);
+                  return (
+                    <ScenarioGroup
+                      key={`referral-group-${idx}`}
+                      title="Seller Lead - Referral"
+                      description="Master every stage of a referral-based listing - from first call to final contract."
+                      likes={likeSum}
+                      steps={[
+                        { title: 'Initial Call', icon: 'phone', description: 'Simulate the first contact call', link: '/choose-ai-lead' },
+                        { title: 'Listing Consultation', icon: 'home', description: 'Guide the in-home consultation', link: '/choose-ai-lead?seller_referral2=true' },
+                        { title: 'Contract Negotiations', icon: 'home', description: 'Navigate terms and close the deal', link: '/choose-ai-lead?seller_referral2=true' },
+                      ]}
+                    />
+                  );
+                }
+
+                const scenario = entry.item;
+                return (
+                  <ScenarioCard
+                    key={scenario.id}
+                    title={scenario.title}
+                    likes={scenario.likes}
+                    location={scenario.location}
+                    description={scenario.title === 'Seller Lead - Referral 2 (Listing Consultation)'
+                      ? 'Second stage of seller training - Avery is ready to discuss listing details and next steps.'
+                      : undefined}
+                    onClick={() => handleScenarioClick(scenario.title)}
+                  />
+                );
+              });
+            })()}
           </div>
         ) : (
           <div className="text-center py-16 bg-white/60 backdrop-blur-sm rounded-2xl border border-gray-100">
@@ -265,4 +306,10 @@ export default function CallScenarios() {
     </div>
   );
 }
+
+
+
+
+
+
 
