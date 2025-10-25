@@ -31,8 +31,8 @@ export default function ChooseAILead() {
   const isReferral2 = params.get("seller_referral2") === "true";
   const isReferral = String(scenario).toLowerCase().includes("seller lead - referral");
 
-  // For Referral 2, only Avery. For base Referral, Avery + Morgan.
-  const allowedIds = isReferral ? (isReferral2 ? ["avery"] : ["avery", "morgan"]) : [];
+  // For Referral 2, only Avery. For base Referral, include Avery, Morgan, and Quinn.
+  const allowedIds = isReferral ? (isReferral2 ? ["avery"] : ["avery", "morgan", "quinn"]) : [];
 
   const [currentPage, setCurrentPage] = useState(0);
   const [difficultyFilter, setDifficultyFilter] = useState<string>("all");
@@ -59,13 +59,18 @@ export default function ChooseAILead() {
           description =
             "Professional Executive and Buisness Owner. Respects Agents that can show their prowess through Quantitative Metrics, Statistics and Detailed Plans. He will only work with a Professional. He has realistic goals as he understands the markets and the challenges that come with selling a property.";
           traits = ["Professional", "Detail-Oriented", "Composed", "Realistic", "To-The-Point"];
+        } else if (p.id === "quinn") {
+          referralInfo = "Referred to you by her colleague Heather";
+          description =
+            "Composed, measured communicator with a neutral American cadence. Direct and pragmatic; expects clarity and professionalism.";
+          traits = ["Calm", "Direct", "Composed", "Pragmatic"];
         }
 
         return {
           id: p.id,
           displayName: p.displayName,
           difficulty: p.difficulty as Difficulty,
-          difficultyStars: p.id === "avery" ? 1 : mapStars5(p.difficulty as Difficulty),
+          difficultyStars: p.id === "avery" ? 1 : p.id === "quinn" ? 4 : mapStars5(p.difficulty as Difficulty),
           description,
           image: p.image as unknown as string,
           referralInfo,
@@ -91,8 +96,13 @@ export default function ChooseAILead() {
   const handleSelect = (p: UIPersona) => {
     const persona = PersonaConfig.find((x) => x.id === p.id)!;
     let vapiAssistantId: string | undefined = getAssistantOverrideFromSearch(location.search, persona.id);
-    if (isReferral && !isReferral2 && persona.id === "morgan") {
-      vapiAssistantId = "7a84ad61-a24c-4f05-a4f7-eefca3630201";
+    if (isReferral && !isReferral2) {
+      if (persona.id === "morgan") {
+        vapiAssistantId = "7a84ad61-a24c-4f05-a4f7-eefca3630201";
+      } else if (persona.id === "quinn") {
+        // Quinn - Seller Lead Referral (Initial Call)
+        vapiAssistantId = "4781f1aa-dc0c-4162-8f63-3711feaee753";
+      }
     }
     const state = {
       scenario,
