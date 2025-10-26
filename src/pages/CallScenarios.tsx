@@ -158,7 +158,7 @@ export default function CallScenarios() {
             {activeTab === 'content' ? (
               <>
                 <div className="bg-gradient-to-br from-blue-100 to-blue-50 rounded-xl p-2">
-                  <span className="text-2xl">ðŸ“–</span>
+                  <span className="text-2xl">Scripts</span>
                 </div>
                 <div>
                   <h1 className="text-[#1a2540]">Script Scenarios</h1>
