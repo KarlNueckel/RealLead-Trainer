@@ -4,6 +4,7 @@ import { CallConfig } from "./ConfigurationPage";
 import { UserTalkingPage } from "./callUI/UserTalkingPage";
 import { AITalkingPage } from "./callUI/AITalkingPage";
 import { referralScriptContent } from "../scenarios/referralScript";
+import GoalPopup from "./GoalPopup";
 
 export type ScriptChunk = {
   speaker: "user" | "ai";
@@ -35,6 +36,8 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   const [isInitializing, setIsInitializing] = useState(true);
   const [initProgress, setInitProgress] = useState(0);
   const [shouldEndCall, setShouldEndCall] = useState(false);
+  // Gate starting the conversation until user dismisses goal popup
+  const [allowStart, setAllowStart] = useState(false);
   
   // Script state
   const [scriptChunks, setScriptChunks] = useState<ScriptChunk[]>([]);
@@ -68,6 +71,25 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
   // Avery via Vapi SDK (no widget)
   const [callActive, setCallActive] = useState(false);
   const vapiRef = useRef<InstanceType<typeof Vapi> | null>(null);
+
+  const goalSteps = (() => {
+    const scenarioName = String(config?.scenario || '').toLowerCase();
+    const isListingConsult = scenarioName.includes('listing consultation')
+      || scenarioName.includes('referral 2')
+      || scenarioName.includes('referral2');
+    if (isListingConsult) {
+      return [
+        'Identify any updates needed to the home',
+        'Agree on listing price, your commission and outline a foolproof marketing plan',
+        'Move the client towards signing the listing contract agreement',
+      ];
+    }
+    return [
+      'Get to know the client',
+      'Learn about the property',
+      'Set up listing consultation',
+    ];
+  })();
 
   // Auto-advance slides when AI stops speaking, but only if user spoke immediately before
   const prevIsAISpeakingRef = useRef<boolean>(false);
@@ -233,6 +255,7 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
 
   useEffect(() => {
     if (!config?.vapiAssistantId && config?.persona?.id !== 'avery') return;
+    if (!allowStart) return;
     try {
       const client = new (Vapi as any)("079cf384-f6b0-4c56-a7b5-6843b494e4fa");
       client.on?.('call-start', () => setIsConnected(true));
@@ -410,7 +433,7 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       try { vapiRef.current?.removeAllListeners?.(); vapiRef.current?.stop?.(); } catch {}
       vapiRef.current = null;
     };
-  }, [config?.persona?.id, config?.vapiAssistantId]);
+  }, [config?.persona?.id, config?.vapiAssistantId, allowStart]);
 
   const handleToggleVapiCall = async () => {
     const client = vapiRef.current as any;
@@ -578,6 +601,7 @@ Respond with ONLY the JSON object (no markdown, no preface, no code fences).`;
   // Initialize WebSocket connection (skip when using Vapi)
   useEffect(() => {
     if (config?.persona?.id === 'avery' || config?.vapiAssistantId) { setIsInitializing(false); return; }
+    if (!allowStart) return;
     let mounted = true;
 
     const initializeCall = async () => {
@@ -680,7 +704,7 @@ Respond with ONLY the JSON object (no markdown, no preface, no code fences).`;
       mounted = false;
       cleanup();
     };
-  }, []);
+  }, [allowStart]);
 
   // Timer: consider either realtime connection or Avery call active
   useEffect(() => {
@@ -1657,6 +1681,9 @@ Respond with ONLY the JSON object (no markdown, no preface, no code fences).`;
     
     return (
       <>
+        {!allowStart && (
+          <GoalPopup steps={goalSteps} onClose={() => setAllowStart(true)} />
+        )}
         {(isInitializing && config.persona?.id !== 'avery') && <LoadingOverlay />}
         {(config.persona?.id === 'avery' || !isInitializing) && (
           isAISpeaking ? (
@@ -1710,6 +1737,9 @@ Respond with ONLY the JSON object (no markdown, no preface, no code fences).`;
   // Fallback: regular transcript view
   return (
     <>
+      {!allowStart && (
+        <GoalPopup steps={goalSteps} onClose={() => setAllowStart(true)} />
+      )}
       {(isInitializing && config.persona?.id !== 'avery') && <LoadingOverlay />}
       <div className="flex flex-col h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
