@@ -419,6 +419,11 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
           if (!callActive) {
             const defaultAssistant = "80afc02e-adde-440d-b93c-dce41722a56f";
             const assistantId = (config as any)?.vapiAssistantId || defaultAssistant;
+            console.log('[Vapi] Auto-start with assistantId:', assistantId, {
+              personaId: config?.persona?.id,
+              personaName: config?.persona?.displayName,
+              stage: (config as any)?.seller_referral_contract ? 'contract' : ((config as any)?.seller_referral2 ? 'listing_consultation' : 'initial_call')
+            });
             await (client as any).start(assistantId);
             setCallActive(true);
           }
@@ -442,6 +447,11 @@ export function CallSimulationPage({ config, onEndCall }: CallSimulationPageProp
       if (!callActive) {
         const defaultAssistant = "80afc02e-adde-440d-b93c-dce41722a56f";
         const assistantId = (config as any)?.vapiAssistantId || defaultAssistant;
+        console.log('[Vapi] Manual start with assistantId:', assistantId, {
+          personaId: config?.persona?.id,
+          personaName: config?.persona?.displayName,
+          stage: (config as any)?.seller_referral_contract ? 'contract' : ((config as any)?.seller_referral2 ? 'listing_consultation' : 'initial_call')
+        });
         await client.start(assistantId);
         setCallActive(true);
       } else {

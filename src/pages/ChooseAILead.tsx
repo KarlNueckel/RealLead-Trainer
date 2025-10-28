@@ -78,12 +78,14 @@ export default function ChooseAILead() {
 
         return {
           id: p.id,
-          // Rename for Referral 2 UI context (also mirror for contract page per request)
-          displayName: ((isReferral2 || isReferralContract) && p.id === 'morgan')
-            ? 'Morgan – Listing Consultation'
-            : ((isReferral2 || isReferralContract) && p.id === 'quinn')
-              ? 'Quinn – Listing Consultation'
-              : p.displayName,
+          // Stage-specific display names per route
+          displayName: (
+            isReferralContract
+              ? (p.id === 'morgan' ? 'Morgan – Contract Negotiation' : p.id === 'quinn' ? 'Quinn – Contract Negotiation' : p.displayName)
+              : (isReferral2
+                  ? (p.id === 'morgan' ? 'Morgan – Listing Consultation' : p.id === 'quinn' ? 'Quinn – Listing Consultation' : p.displayName)
+                  : p.displayName)
+          ),
           difficulty: p.difficulty as Difficulty,
           difficultyStars: p.id === "avery" ? 1 : p.id === "quinn" ? 4 : mapStars5(p.difficulty as Difficulty),
           description,
@@ -115,7 +117,7 @@ export default function ChooseAILead() {
       isReferralContract ? (ASSISTANT_OVERRIDES as any)?.seller_referral_contract?.[persona.id] :
       getAssistantOverrideFromSearch(location.search, persona.id)
     );
-    if (isReferral && !isReferral2) {
+    if (isReferral && !isReferral2 && !isReferralContract) {
       if (persona.id === "morgan") {
         vapiAssistantId = "7a84ad61-a24c-4f05-a4f7-eefca3630201";
       } else if (persona.id === "quinn") {
@@ -125,12 +127,22 @@ export default function ChooseAILead() {
     }
     const state = {
       scenario,
-      // Ensure display name reflects consultation context
-      persona: (isReferral2 && persona.id === 'morgan')
-        ? { ...persona, displayName: 'Morgan – Listing Consultation' }
-        : (isReferral2 && persona.id === 'quinn')
-          ? { ...persona, displayName: 'Quinn – Listing Consultation' }
-          : persona,
+      // Ensure display name reflects current stage
+      persona: (
+        isReferralContract
+          ? (persona.id === 'morgan'
+              ? { ...persona, displayName: 'Morgan – Contract Negotiation' }
+              : persona.id === 'quinn'
+                ? { ...persona, displayName: 'Quinn – Contract Negotiation' }
+                : persona)
+          : (isReferral2
+              ? (persona.id === 'morgan'
+                  ? { ...persona, displayName: 'Morgan – Listing Consultation' }
+                  : persona.id === 'quinn'
+                    ? { ...persona, displayName: 'Quinn – Listing Consultation' }
+                    : persona)
+              : persona)
+      ),
       seller_referral2: isReferral2,
       seller_referral_contract: isReferralContract,
       vapiAssistantId,
@@ -307,8 +319,17 @@ function PersonaCard({ persona, onSelect, isReferral2, isReferralContract }: Per
               </div>
               {(isReferral2 || isReferralContract) && persona.id === "avery" ? (
                 <div className="text-sm text-[#64748B] italic">
-                  <p>Listing Consultation after a Successful Introductory Call</p>
-                  <p>Referred to you by her previous Agent Ryan</p>
+                  {isReferralContract ? (
+                    <>
+                      <p>Contract Negotiation following Listing Consultation</p>
+                      <p>Referred to you by her previous Agent Ryan</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>Listing Consultation after a Successful Introductory Call</p>
+                      <p>Referred to you by her previous Agent Ryan</p>
+                    </>
+                  )}
                 </div>
               ) : persona.referralInfo ? (
                 <p className="text-sm text-[#64748B] italic">{persona.referralInfo}</p>
