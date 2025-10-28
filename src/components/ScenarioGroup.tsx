@@ -45,7 +45,7 @@ export function ScenarioGroup({ title, description, steps, likes = 0 }: Scenario
     } else if (step.title.toLowerCase().includes('initial call')) {
       scenarioTitle = 'Seller Lead - Referral';
     } else if (step.title.toLowerCase().includes('contract negotiations')) {
-      scenarioTitle = 'Seller Lead - Referral - Contract Negotiations';
+      scenarioTitle = 'Seller Lead – Referral: Contract Negotiations';
     }
     navigate(step.link, { state: { scenario: scenarioTitle } });
   };

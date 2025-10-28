@@ -29,11 +29,17 @@ export default function ChooseAILead() {
   const params = new URLSearchParams(location.search);
   const scenario = (location.state?.scenario as string) || params.get("path") || "Seller Lead - Referral";
   const isReferral2 = params.get("seller_referral2") === "true";
+  const isReferralContract = params.get("seller_referral_contract") === "true";
   const isReferral = String(scenario).toLowerCase().includes("seller lead - referral");
 
   // For Referral 2 (Listing Consultation), include Morgan, Avery, and Quinn.
+  // For Contract Negotiations, include Avery, Morgan, and Quinn.
   // For base Referral, include Avery, Morgan, and Quinn.
-  const allowedIds = isReferral ? (isReferral2 ? ["morgan", "avery", "quinn"] : ["avery", "morgan", "quinn"]) : [];
+  const allowedIds = isReferral
+    ? (isReferralContract
+        ? ["avery", "morgan", "quinn"]
+        : (isReferral2 ? ["morgan", "avery", "quinn"] : ["avery", "morgan", "quinn"]))
+    : [];
 
   const [currentPage, setCurrentPage] = useState(0);
   const [difficultyFilter, setDifficultyFilter] = useState<string>("all");
@@ -119,6 +125,7 @@ export default function ChooseAILead() {
           ? { ...persona, displayName: 'Quinn – Listing Consultation' }
           : persona,
       seller_referral2: isReferral2,
+      seller_referral_contract: isReferralContract,
       vapiAssistantId,
     } as any;
     navigate("/pick-script", { state });

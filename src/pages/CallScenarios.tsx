@@ -256,7 +256,7 @@ export default function CallScenarios() {
                       steps={[
                         { title: 'Initial Call', icon: 'phone', description: 'Simulate the first contact call', link: '/choose-ai-lead' },
                         { title: 'Listing Consultation', icon: 'home', description: 'Guide the in-home consultation', link: '/choose-ai-lead?seller_referral2=true' },
-                        { title: 'Contract Negotiations', icon: 'home', description: 'Navigate terms and close the deal', link: '/choose-ai-lead?seller_referral2=true' },
+                        { title: 'Contract Negotiations', icon: 'home', description: 'Negotiate listing price, commission, and contract terms with motivated or hesitant sellers.', link: '/choose-ai-lead?seller_referral_contract=true' },
                       ]}
                     />
                   );
