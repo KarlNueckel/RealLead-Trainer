@@ -31,8 +31,9 @@ export default function ChooseAILead() {
   const isReferral2 = params.get("seller_referral2") === "true";
   const isReferral = String(scenario).toLowerCase().includes("seller lead - referral");
 
-  // For Referral 2, only Avery. For base Referral, include Avery, Morgan, and Quinn.
-  const allowedIds = isReferral ? (isReferral2 ? ["avery"] : ["avery", "morgan", "quinn"]) : [];
+  // For Referral 2 (Listing Consultation), include Morgan, Avery, and Quinn.
+  // For base Referral, include Avery, Morgan, and Quinn.
+  const allowedIds = isReferral ? (isReferral2 ? ["morgan", "avery", "quinn"] : ["avery", "morgan", "quinn"]) : [];
 
   const [currentPage, setCurrentPage] = useState(0);
   const [difficultyFilter, setDifficultyFilter] = useState<string>("all");
@@ -68,7 +69,12 @@ export default function ChooseAILead() {
 
         return {
           id: p.id,
-          displayName: p.displayName,
+          // Rename for Referral 2 UI context
+          displayName: (isReferral2 && p.id === 'morgan')
+            ? 'Morgan – Listing Consultation'
+            : (isReferral2 && p.id === 'quinn')
+              ? 'Quinn – Listing Consultation'
+              : p.displayName,
           difficulty: p.difficulty as Difficulty,
           difficultyStars: p.id === "avery" ? 1 : p.id === "quinn" ? 4 : mapStars5(p.difficulty as Difficulty),
           description,
@@ -77,7 +83,7 @@ export default function ChooseAILead() {
           traits,
         } as UIPersona;
       });
-  }, [allowedIds]);
+  }, [allowedIds, isReferral2]);
 
   const filtered = useMemo(() => {
     if (difficultyFilter === "all") return allUIPersonas;
@@ -106,7 +112,12 @@ export default function ChooseAILead() {
     }
     const state = {
       scenario,
-      persona,
+      // Ensure display name reflects consultation context
+      persona: (isReferral2 && persona.id === 'morgan')
+        ? { ...persona, displayName: 'Morgan – Listing Consultation' }
+        : (isReferral2 && persona.id === 'quinn')
+          ? { ...persona, displayName: 'Quinn – Listing Consultation' }
+          : persona,
       seller_referral2: isReferral2,
       vapiAssistantId,
     } as any;
