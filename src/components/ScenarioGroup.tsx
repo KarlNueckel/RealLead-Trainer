@@ -7,7 +7,7 @@ type Step = {
   title: string;
   icon: 'phone' | 'home';
   description?: string;
-  link: string; // e.g., '/choose-ai-lead' or '/choose-ai-lead?seller_referral2=true'
+  link: string; // e.g., '/seller-lead-referral-initial-call' or '/seller-lead-referral-listing-consultation'
 };
 
 interface ScenarioGroupProps {

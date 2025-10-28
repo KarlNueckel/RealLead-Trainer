@@ -248,10 +248,13 @@ export function SessionSummaryPage({
                     </div>
                     <button
                       onClick={() => {
-                        // Navigate to persona selection; keep path context in query
-                        const url = new URL(window.location.origin + '/choose-ai-lead');
+                        // Map next step to the correct route
+                        const step = String(nextStepUnlocked || '').toLowerCase();
+                        let path = '/seller-lead-referral-initial-call';
+                        if (step.includes('listing consultation')) path = '/seller-lead-referral-listing-consultation';
+                        if (step.includes('contract')) path = '/seller-lead-referral-contract-negotiation';
+                        const url = new URL(window.location.origin + path);
                         if (typeof scenario === 'string') url.searchParams.set('path', scenario);
-                        url.searchParams.set('nextStep', nextStepUnlocked || '');
                         window.location.href = url.toString();
                       }}
                       className="px-4 py-2 bg-[#2563EB] text-white rounded-2xl hover:bg-[#1E40AF] transition"
@@ -274,9 +277,12 @@ export function SessionSummaryPage({
                           disabled={!clickable}
                           onClick={() => {
                             if (!clickable) return;
-                            const url = new URL(window.location.origin + '/choose-ai-lead');
+                            const step = String(s.name || '').toLowerCase();
+                            let path = '/seller-lead-referral-initial-call';
+                            if (step.includes('listing consultation')) path = '/seller-lead-referral-listing-consultation';
+                            if (step.includes('contract')) path = '/seller-lead-referral-contract-negotiation';
+                            const url = new URL(window.location.origin + path);
                             url.searchParams.set('path', trainingPath);
-                            url.searchParams.set('step', s.name);
                             window.location.href = url.toString();
                           }}
                           className={`px-3 py-1.5 rounded-full text-sm border transition ${
@@ -425,6 +431,5 @@ export function SessionSummaryPage({
 
 
             <h3 className="text-[20px] font-semibold text-[#1E293B] mb-4">Call Transcript</h3>
-
 
 

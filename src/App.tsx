@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { LandingPage } from "./components/LandingPage";
 import CallScenarios from "./pages/CallScenarios";
 import ChooseAILead from "./pages/ChooseAILead";
@@ -54,7 +54,12 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/scenarios" element={<CallScenarios />} />
-        <Route path="/choose-ai-lead" element={<ChooseAILead />} />
+        {/* Legacy route redirect for backward compatibility */}
+        <Route path="/choose-ai-lead" element={<Navigate to="/seller-lead-referral-initial-call" replace />} />
+        {/* New named routes */}
+        <Route path="/seller-lead-referral-initial-call" element={<ChooseAILead />} />
+        <Route path="/seller-lead-referral-listing-consultation" element={<ChooseAILead />} />
+        <Route path="/seller-lead-referral-contract-negotiation" element={<ChooseAILead />} />
         <Route path="/pick-script" element={<PickScript />} />
         <Route path="/conversation" element={<ConversationWrapper />} />
         <Route path="/summary" element={<SummaryWrapper />} />

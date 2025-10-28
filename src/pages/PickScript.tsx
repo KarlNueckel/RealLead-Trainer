@@ -12,7 +12,7 @@ export default function PickScript() {
   const handleScriptSelect = (scriptName: string) => {
     if (!persona) {
       alert("Please select a persona first");
-      navigate("/choose-ai-lead");
+      navigate("/seller-lead-referral-initial-call");
       return;
     }
 
@@ -47,7 +47,12 @@ export default function PickScript() {
     <div className="min-h-screen flex flex-col items-center py-10 bg-gray-50">
       <div className="w-full max-w-5xl px-6 mb-6">
         <button
-          onClick={() => navigate("/choose-ai-lead", { state: { scenario } })}
+          onClick={() => {
+            const backPath = seller_referral_contract
+              ? "/seller-lead-referral-contract-negotiation"
+              : (seller_referral2 ? "/seller-lead-referral-listing-consultation" : "/seller-lead-referral-initial-call");
+            navigate(backPath, { state: { scenario } });
+          }}
           className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-white rounded-lg transition-all"
         >
           <ArrowLeft className="w-4 h-4" />

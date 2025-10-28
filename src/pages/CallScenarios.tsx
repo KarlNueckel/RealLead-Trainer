@@ -53,11 +53,10 @@ export default function CallScenarios() {
 
   const handleScenarioClick = (title: string) => {
     if (title === 'Seller Lead - Referral 2 (Listing Consultation)') {
-      // Route with explicit query flag for the second-stage scenario
-      navigate('/choose-ai-lead?seller_referral2=true', { state: { scenario: title } });
+      navigate('/seller-lead-referral-listing-consultation', { state: { scenario: title } });
       return;
     }
-    navigate('/choose-ai-lead', { state: { scenario: title } });
+    navigate('/seller-lead-referral-initial-call', { state: { scenario: title } });
   };
 
   return (
@@ -254,9 +253,9 @@ export default function CallScenarios() {
                       description="Master every stage of a referral-based listing - from first call to final contract."
                       likes={likeSum}
                       steps={[
-                        { title: 'Initial Call', icon: 'phone', description: 'Simulate the first contact call', link: '/choose-ai-lead' },
-                        { title: 'Listing Consultation', icon: 'home', description: 'Guide the in-home consultation', link: '/choose-ai-lead?seller_referral2=true' },
-                        { title: 'Contract Negotiations', icon: 'home', description: 'Negotiate listing price, commission, and contract terms with motivated or hesitant sellers.', link: '/choose-ai-lead?seller_referral_contract=true' },
+                        { title: 'Initial Call', icon: 'phone', description: 'Simulate the first contact call', link: '/seller-lead-referral-initial-call' },
+                        { title: 'Listing Consultation', icon: 'home', description: 'Guide the in-home consultation', link: '/seller-lead-referral-listing-consultation' },
+                        { title: 'Contract Negotiations', icon: 'home', description: 'Negotiate listing price, commission, and contract terms with motivated or hesitant sellers.', link: '/seller-lead-referral-contract-negotiation' },
                       ]}
                     />
                   );
@@ -292,7 +291,7 @@ export default function CallScenarios() {
       <ColdCallModal
         isOpen={isColdCallModalOpen}
         onClose={() => setIsColdCallModalOpen(false)}
-        onStart={() => navigate('/choose-ai-lead', { state: { scenario: 'Cold Call - Homeowner' } })}
+        onStart={() => navigate('/seller-lead-referral-initial-call', { state: { scenario: 'Cold Call - Homeowner' } })}
       />
 
       {/* Filters Sheet */}

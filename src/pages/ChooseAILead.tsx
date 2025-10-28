@@ -7,7 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { motion } from "framer-motion";
 import { personas as PersonaConfig } from "../config/personas";
-import { getAssistantOverrideFromSearch } from "../config/assistantOverrides";
+import { getAssistantOverrideFromSearch, ASSISTANT_OVERRIDES } from "../config/assistantOverrides";
 
 type Difficulty = "Easy" | "Medium" | "Hard";
 
@@ -28,9 +28,12 @@ export default function ChooseAILead() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const scenario = (location.state?.scenario as string) || params.get("path") || "Seller Lead - Referral";
-  const isReferral2 = params.get("seller_referral2") === "true";
-  const isReferralContract = params.get("seller_referral_contract") === "true";
-  const isReferral = String(scenario).toLowerCase().includes("seller lead - referral");
+  const pathname = location.pathname || '';
+  const isReferral2 = params.get("seller_referral2") === "true" || pathname.includes('/seller-lead-referral-listing-consultation');
+  const isReferralContract = params.get("seller_referral_contract") === "true" || pathname.includes('/seller-lead-referral-contract-negotiation');
+  // Treat any of the seller-lead-referral routes as referral flow
+  const isReferralFromPath = pathname.includes('/seller-lead-referral');
+  const isReferral = isReferralFromPath || String(scenario).toLowerCase().includes("seller lead - referral");
 
   // For Referral 2 (Listing Consultation), include Morgan, Avery, and Quinn.
   // For Contract Negotiations, include Avery, Morgan, and Quinn.
@@ -75,10 +78,10 @@ export default function ChooseAILead() {
 
         return {
           id: p.id,
-          // Rename for Referral 2 UI context
-          displayName: (isReferral2 && p.id === 'morgan')
+          // Rename for Referral 2 UI context (also mirror for contract page per request)
+          displayName: ((isReferral2 || isReferralContract) && p.id === 'morgan')
             ? 'Morgan – Listing Consultation'
-            : (isReferral2 && p.id === 'quinn')
+            : ((isReferral2 || isReferralContract) && p.id === 'quinn')
               ? 'Quinn – Listing Consultation'
               : p.displayName,
           difficulty: p.difficulty as Difficulty,
@@ -107,7 +110,11 @@ export default function ChooseAILead() {
 
   const handleSelect = (p: UIPersona) => {
     const persona = PersonaConfig.find((x) => x.id === p.id)!;
-    let vapiAssistantId: string | undefined = getAssistantOverrideFromSearch(location.search, persona.id);
+    let vapiAssistantId: string | undefined = (
+      isReferral2 ? (ASSISTANT_OVERRIDES as any)?.seller_referral2?.[persona.id] :
+      isReferralContract ? (ASSISTANT_OVERRIDES as any)?.seller_referral_contract?.[persona.id] :
+      getAssistantOverrideFromSearch(location.search, persona.id)
+    );
     if (isReferral && !isReferral2) {
       if (persona.id === "morgan") {
         vapiAssistantId = "7a84ad61-a24c-4f05-a4f7-eefca3630201";
@@ -234,7 +241,7 @@ export default function ChooseAILead() {
           >
             {filtered.map((persona) => (
               <div key={persona.id} className="w-[calc(50%-16px)] flex-shrink-0">
-                <PersonaCard persona={persona} onSelect={handleSelect} isReferral2={isReferral2} />
+                <PersonaCard persona={persona} onSelect={handleSelect} isReferral2={isReferral2} isReferralContract={isReferralContract} />
               </div>
             ))}
           </motion.div>
@@ -268,9 +275,10 @@ type PersonaCardProps = {
   persona: UIPersona;
   onSelect: (persona: UIPersona) => void;
   isReferral2?: boolean;
+  isReferralContract?: boolean;
 };
 
-function PersonaCard({ persona, onSelect, isReferral2 }: PersonaCardProps) {
+function PersonaCard({ persona, onSelect, isReferral2, isReferralContract }: PersonaCardProps) {
   const getGradeInfo = (score: number): { grade: string; color: string } => {
     if (score >= 90) return { grade: "A", color: "#22C55E" };
     if (score >= 80) return { grade: "B", color: "#3B82F6" };
@@ -297,7 +305,7 @@ function PersonaCard({ persona, onSelect, isReferral2 }: PersonaCardProps) {
                 </div>
                 <span className="text-sm text-[#64748B]">{persona.difficulty}</span>
               </div>
-              {isReferral2 && persona.id === "avery" ? (
+              {(isReferral2 || isReferralContract) && persona.id === "avery" ? (
                 <div className="text-sm text-[#64748B] italic">
                   <p>Listing Consultation after a Successful Introductory Call</p>
                   <p>Referred to you by her previous Agent Ryan</p>
@@ -338,7 +346,13 @@ function PersonaCard({ persona, onSelect, isReferral2 }: PersonaCardProps) {
           )}
 
           <Button onClick={() => onSelect(persona)} className="w-full bg-[#163E7A] hover:bg-[#0A3E91] text-white rounded-lg shadow-md hover:shadow-lg transition-all">
-            Select {persona.displayName}
+            {(() => {
+              // Base name should be the clean persona name without stage suffixes
+              const original = PersonaConfig.find((x) => x.id === persona.id)?.displayName || persona.displayName;
+              const clean = String(original).split('–')[0].split('-')[0].trim();
+              if (isReferralContract) return `Select ${clean} - Contract Negotiation`;
+              return `Select ${persona.displayName}`;
+            })()}
           </Button>
         </div>
 
